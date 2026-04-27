@@ -1,0 +1,20 @@
+# Windows / Office temporary files
+~$*
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+
+# Build and diagnostic logs
+*.log
+
+# Local temporary/package scratch output
+installer/EndUserPackage/Payload/*
+!installer/EndUserPackage/Payload/.gitkeep
+
+# PowerShell and test-generated archives
+test/**/*.zip
+
+# Keep release artifacts for this small end-user add-in project.
+!dist/OleRawDataInserter.dotm
+!release/FigurePackageWordAddinSetup.exe
