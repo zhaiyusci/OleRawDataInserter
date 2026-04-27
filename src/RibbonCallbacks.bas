@@ -10,3 +10,7 @@ End Sub
 Public Sub RibbonInsertPlotFolder(ByVal control As IRibbonControl)
     InsertPlotFolderAsOle
 End Sub
+
+Public Sub RibbonShowUsage(ByVal control As IRibbonControl)
+    ShowUsageHelp
+End Sub

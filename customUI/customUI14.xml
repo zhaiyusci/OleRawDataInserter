@@ -11,6 +11,12 @@
                   screentip="Insert plot.png with source files"
                   supertip="Choose a folder containing plot.png. The add-in embeds the whole folder as a zip OLE object and displays plot.png."
                   onAction="RibbonInsertPlotFolder"/>
+          <button id="btnShowUsage"
+                  label="Usage"
+                  imageMso="Help"
+                  screentip="Show usage instructions"
+                  supertip="Learn how to prepare plot.py, plot.png, and raw data before inserting a figure package."
+                  onAction="RibbonShowUsage"/>
         </group>
       </tab>
     </tabs>

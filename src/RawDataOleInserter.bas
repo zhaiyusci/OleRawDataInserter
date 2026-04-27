@@ -56,6 +56,10 @@ Public Sub InsertPlotFolderAsOle()
     InsertPlotFolder folderPath
 End Sub
 
+Public Sub ShowUsageHelp()
+    MsgBox BuildUsageHelpText(), vbInformation, DecodeEscapedText("Figure Package \u4F7F\u7528\u8BF4\u660E")
+End Sub
+
 Public Sub ShowInsertRawDataDialog()
     InsertRawDataDialog.Show
 End Sub
@@ -219,6 +223,52 @@ Private Function GetTempFolderPath(ByVal fso As Object) As String
     End If
 
     GetTempFolderPath = tempPath
+End Function
+
+Private Function BuildUsageHelpText() As String
+    Dim escaped As String
+
+    escaped = _
+        "Figure Package \u4F7F\u7528\u8BF4\u660E\n\n" & _
+        "1. \u5728\u4E00\u4E2A\u6587\u4EF6\u5939\u4E2D\u51C6\u5907\u7ED8\u56FE\u6240\u9700\u7684\u5185\u5BB9\uFF1Aplot.py\u3001\u539F\u59CB\u6570\u636E\uFF0C\u4EE5\u53CA\u5176\u4ED6\u8F85\u52A9\u811A\u672C\u6216\u56FE\u7247\u3002\n" & _
+        "2. \u8FD0\u884C plot.py \u751F\u6210\u6700\u7EC8\u56FE\u7247 plot.png\u3002plot.png \u5FC5\u987B\u548C plot.py \u653E\u5728\u540C\u4E00\u4E2A\u6587\u4EF6\u5939\u91CC\u3002\n" & _
+        "3. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Figure Package\uFF0C\u9009\u62E9\u8FD9\u4E2A\u6587\u4EF6\u5939\u3002\n" & _
+        "4. \u63D2\u4EF6\u4F1A\u628A\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u539F\u59CB\u6570\u636E\u548C\u811A\u672C\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\u3002\n" & _
+        "5. Word \u4E2D\u663E\u793A\u7684\u662F plot.png\uFF1B\u53CC\u51FB\u56FE\u7247\u53EF\u4EE5\u6253\u5F00\u5D4C\u5165\u7684 zip \u5305\uFF0C\u53D6\u51FA\u7ED8\u56FE\u811A\u672C\u548C\u6570\u636E\u3002\n\n" & _
+        "\u6253\u5305\u65F6\u4E0D\u4F1A\u5305\u542B\uFF1Aplot.png\u3001plot.svg\u3001plot.pdf\u3002\n" & _
+        "\u4F1A\u5305\u542B\uFF1Aplot.py\u3001\u5176\u4ED6\u6570\u636E\u6587\u4EF6\u3001\u811A\u672C\u3001\u56FE\u7247\u548C\u5B50\u6587\u4EF6\u5939\u3002"
+
+    BuildUsageHelpText = DecodeEscapedText(escaped)
+End Function
+
+Private Function DecodeEscapedText(ByVal escaped As String) As String
+    Dim result As String
+    Dim i As Long
+    Dim code As Long
+    Dim token As String
+
+    i = 1
+    Do While i <= Len(escaped)
+        If Mid$(escaped, i, 2) = "\n" Then
+            result = result & vbCrLf
+            i = i + 2
+        ElseIf Mid$(escaped, i, 2) = "\u" And i + 5 <= Len(escaped) Then
+            token = Mid$(escaped, i + 2, 4)
+            code = CLng("&H" & token)
+            result = result & UnicodeChar(code)
+            i = i + 6
+        Else
+            result = result & Mid$(escaped, i, 1)
+            i = i + 1
+        End If
+    Loop
+
+    DecodeEscapedText = result
+End Function
+
+Private Function UnicodeChar(ByVal code As Long) As String
+    If code > 32767 Then code = code - 65536
+    UnicodeChar = ChrW$(code)
 End Function
 
 Private Sub CreateZipFromPath(ByVal sourcePath As String, ByVal zipPath As String)

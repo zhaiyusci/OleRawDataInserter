@@ -10,13 +10,19 @@
 OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
 ```
 
-用户操作：
+典型工作流：
+
+1. 新建一个图目录，把绘图脚本、原始数据和辅助文件都放进去。
+2. 用 `plot.py` 画图，并在同一个目录下输出最终图片 `plot.png`。
+3. 在 Word 的 `Figure Package` 选项卡中点击 `Insert Figure Package`。
+4. 选择刚才那个包含 `plot.py` 和 `plot.png` 的图目录。
+5. 插件会把目录中的原始数据和脚本打包成 zip，并作为 OLE 对象嵌入当前 Word 文档；文档中显示的外观就是 `plot.png`。
+
+安装步骤：
 
 1. 关闭 Microsoft Word。
 2. 双击 `FigurePackageWordAddinSetup.exe`。
 3. 重新打开 Word。
-4. 在 `Figure Package` 选项卡中点击 `Insert Figure Package`。
-5. 选择包含 `plot.png` 的文件夹。
 
 卸载方式：
 

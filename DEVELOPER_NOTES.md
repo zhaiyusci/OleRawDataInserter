@@ -38,6 +38,11 @@ Ribbon XML：
 customUI\customUI14.xml
 ```
 
+当前 Ribbon 有两个按钮：
+
+- `Insert Figure Package`：选择包含 `plot.png` 的图目录并插入 OLE 图包。
+- `Usage`：弹出终端用户使用说明。
+
 Ribbon 图标：
 
 ```text
