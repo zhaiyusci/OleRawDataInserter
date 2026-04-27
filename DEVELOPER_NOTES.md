@@ -222,6 +222,25 @@ tar.exe -a -cf output.zip --exclude=./plot.png --exclude=./plot.svg --exclude=./
 
 这里 `-C sourceFolder .` 的作用是把源文件夹的内容放到 zip 根目录，而不是把源文件夹本身放进去。
 
+## 图片尺寸实现说明
+
+尺寸入口：
+
+```text
+GetImagePrintSize
+FitSizeToTextArea
+GetCurrentTextAreaSize
+```
+
+规则：
+
+- 先用 GDI+ 读取 `plot.png` 的像素尺寸和 DPI，换算为 Word points，得到原始印刷尺寸。
+- 版心宽度取当前节 `PageWidth - LeftMargin - RightMargin - Gutter`。
+- 版心高度取当前节 `PageHeight - TopMargin - BottomMargin`。
+- 如果图片原始印刷尺寸能放进版心，则不放大，保持原始印刷尺寸。
+- 如果图片超过版心，则按宽度比例和高度比例中较小的那个等比缩小。
+- 插件会同时设置宽度和高度，缩放比例相同，因此高宽比保持不变。
+
 ## 发布给用户
 
 发布前确认：

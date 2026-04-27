@@ -121,6 +121,8 @@ Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPa
     Dim iconPath As String
     Dim oleObject As InlineShape
     Dim imgSize As SizeInPoints
+    Dim imageWidth As Double
+    Dim imageHeight As Double
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     imagePath = Trim$(imagePath)
@@ -143,6 +145,9 @@ Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPa
     CreateTransparentIcon iconPath
 
     imgSize = GetImagePrintSize(imagePath)
+    imageWidth = imgSize.Width
+    imageHeight = imgSize.Height
+    FitSizeToTextArea imageWidth, imageHeight
 
     Set oleObject = Selection.InlineShapes.AddOLEObject( _
         FileName:=zipPath, _
@@ -152,8 +157,8 @@ Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPa
         IconIndex:=0, _
         IconLabel:=vbNullString)
 
-    oleObject.Width = imgSize.Width
-    oleObject.Height = imgSize.Height
+    oleObject.Width = imageWidth
+    oleObject.Height = imageHeight
 
     On Error Resume Next
     oleObject.Borders.Enable = False
@@ -268,7 +273,7 @@ End Function
 
 Private Function UnicodeChar(ByVal code As Long) As String
     If code > 32767 Then code = code - 65536
-    UnicodeChar = ChrW$(code)
+    UnicodeChar = ChrW(code)
 End Function
 
 Private Sub CreateZipFromPath(ByVal sourcePath As String, ByVal zipPath As String)
@@ -539,6 +544,49 @@ Private Function GetImagePrintSize(ByVal imgPath As String) As SizeInPoints
     GdiplusShutdown token
     GetImagePrintSize = result
 End Function
+
+Private Sub FitSizeToTextArea(ByRef imageWidthPoints As Double, ByRef imageHeightPoints As Double)
+    Dim textAreaWidth As Double
+    Dim textAreaHeight As Double
+    Dim fitScale As Double
+    Dim widthScale As Double
+    Dim heightScale As Double
+
+    Call GetCurrentTextAreaSize(textAreaWidth, textAreaHeight)
+
+    If imageWidthPoints <= 0 Or imageHeightPoints <= 0 Then Exit Sub
+    If textAreaWidth <= 0 Or textAreaHeight <= 0 Then Exit Sub
+
+    widthScale = textAreaWidth / imageWidthPoints
+    heightScale = textAreaHeight / imageHeightPoints
+    fitScale = 1#
+
+    If widthScale < fitScale Then fitScale = widthScale
+    If heightScale < fitScale Then fitScale = heightScale
+
+    If fitScale < 1# Then
+        imageWidthPoints = imageWidthPoints * fitScale
+        imageHeightPoints = imageHeightPoints * fitScale
+    End If
+End Sub
+
+Private Sub GetCurrentTextAreaSize(ByRef textAreaWidth As Double, ByRef textAreaHeight As Double)
+    Dim setup As Object
+
+    On Error GoTo Failed
+    Set setup = Selection.Sections(1).PageSetup
+
+    textAreaWidth = setup.PageWidth - setup.LeftMargin - setup.RightMargin - setup.Gutter
+    textAreaHeight = setup.PageHeight - setup.TopMargin - setup.BottomMargin
+
+    If textAreaWidth <= 0 Then textAreaWidth = setup.PageWidth - setup.LeftMargin - setup.RightMargin
+    If textAreaHeight <= 0 Then textAreaHeight = setup.PageHeight - setup.TopMargin - setup.BottomMargin
+    Exit Sub
+
+Failed:
+    textAreaWidth = 0
+    textAreaHeight = 0
+End Sub
 
 Private Sub CreateTransparentIcon(ByVal iconPath As String)
     Dim fileNum As Integer
