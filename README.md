@@ -61,6 +61,7 @@ OLE 外观规则：
 
 ```text
 OleRawDataInserter/
+  LICENSE
   assets/
     figure-package-icon.png
   customUI/
@@ -90,3 +91,11 @@ OleRawDataInserter/
 ```text
 OleRawDataInserter\DEVELOPER_NOTES.md
 ```
+
+## Credits
+
+- Thanks to Youhao SHANG for contributing to the original figure-packaging workflow and the idea of embedding raw data as an OLE object while displaying the figure itself in Word.
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE).
