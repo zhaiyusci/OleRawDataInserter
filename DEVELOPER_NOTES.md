@@ -26,6 +26,15 @@ OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
 src\RawDataOleInserter.bas
 ```
 
+图片 + 支持文件对话框：
+
+```text
+src\ImageSupportFilesDialog.frm
+src\ImageSupportFilesDialog.frx
+```
+
+注意：`.frm` 和 `.frx` 必须成对保留。VBE 导入 UserForm 时会读取 `.frm` 中的 `OleObjectBlob` 并加载同名 `.frx`；如果只有手写 `.frm` 而没有 `.frx`，Word 可能把它导入成普通模块，随后在 `.Show` 处编译/运行失败。
+
 Ribbon 回调：
 
 ```text
@@ -38,9 +47,10 @@ Ribbon XML：
 customUI\customUI14.xml
 ```
 
-当前 Ribbon 有两个按钮：
+当前 Ribbon 有三个按钮：
 
 - `Insert Figure Package`：选择包含 `plot.png` 的图目录并插入 OLE 图包。
+- `Insert Image + Files`：打开确认窗口；用户可以在窗口中选择/查看显示图片和支持文件列表，最后点击 `Insert` 提交。
 - `Usage`：弹出终端用户使用说明。
 
 Ribbon 图标：
@@ -97,6 +107,8 @@ powershell -ExecutionPolicy Bypass -File OleRawDataInserter\tools\diagnose-dotm-
 ```text
 src\RawDataOleInserter.bas
 src\RibbonCallbacks.bas
+src\ImageSupportFilesDialog.frm
+src\ImageSupportFilesDialog.frx
 ```
 
 输出文件在：
@@ -175,11 +187,19 @@ $p = Start-Process -FilePath (Resolve-Path "OleRawDataInserter\release\FigurePac
 powershell -ExecutionPolicy Bypass -File OleRawDataInserter\test\run-word-smoke-test-with-temp-vbom.ps1
 ```
 
+这个 wrapper 会用 watchdog 在子进程中运行真正的 Word smoke test。默认超时为 120 秒；如果 Word/VBE 因编译错误或模态错误窗口卡住，wrapper 会杀掉本次测试启动的 Word 进程并失败退出，不会无限等待。
+
+调短超时时间进行诊断：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File OleRawDataInserter\test\run-word-smoke-test-with-temp-vbom.ps1 -TimeoutSeconds 30
+```
+
 成功时应看到：
 
 ```text
 VBA SmokeTest OK
-InlineShapes : 1
+InlineShapes : 2
 ```
 
 检查最近生成的 zip 内容：
@@ -204,6 +224,7 @@ VBA 中的压缩入口：
 
 ```text
 CreateZipFromPath
+CreateZipFromSupportFiles
 ```
 
 优先级：
@@ -214,13 +235,26 @@ CreateZipFromPath
 
 当前主要依赖 Windows 自带 `tar.exe`，因为它在 Word VBA 中调用稳定，并能保留中文文件名。
 
-文件夹模式下的 `tar.exe` 命令形态：
+`Insert Figure Package` 的文件夹模式会排除顶层生成图文件。`tar.exe` 命令形态：
 
 ```text
 tar.exe -a -cf output.zip --exclude=./plot.png --exclude=./plot.svg --exclude=./plot.pdf -C sourceFolder .
 ```
 
 这里 `-C sourceFolder .` 的作用是把源文件夹的内容放到 zip 根目录，而不是把源文件夹本身放进去。
+
+`Insert Image + Files` 的多文件模式会先创建临时 staging 文件夹：
+
+```text
+%LOCALAPPDATA%\Temp\OleRawDataInserter_<imageBaseName>_<timestamp>\
+```
+
+实现规则：
+
+- 用户多选的支持文件会复制到 staging 文件夹。
+- 如果不同目录中的支持文件同名，复制时会改成 `name_2.ext`、`name_3.ext` 等形式，避免覆盖。
+- staging 文件夹再通过 `CreateZipFromPath(..., False)` 打包；这个模式不会排除 `plot.png`、`plot.svg`、`plot.pdf`。
+- zip 创建完成后会删除 staging 文件夹。
 
 ## 图片尺寸实现说明
 
@@ -234,7 +268,7 @@ GetCurrentTextAreaSize
 
 规则：
 
-- 先用 GDI+ 读取 `plot.png` 的像素尺寸和 DPI，换算为 Word points，得到原始印刷尺寸。
+- 先用 GDI+ 读取显示图片的像素尺寸和 DPI，换算为 Word points，得到原始印刷尺寸。
 - 版心宽度取当前节 `PageWidth - LeftMargin - RightMargin - Gutter`。
 - 版心高度取当前节 `PageHeight - TopMargin - BottomMargin`。
 - 如果图片原始印刷尺寸能放进版心，则不放大，保持原始印刷尺寸。
@@ -256,7 +290,7 @@ release\FigurePackageWordAddinSetup.exe
 1. 关闭 Word。
 2. 双击安装器。
 3. 重新打开 Word。
-4. 在 `Figure Package` 选项卡点击 `Insert Figure Package`。
+4. 在 `Figure Package` 选项卡点击 `Insert Figure Package`，或点击 `Insert Image + Files` 使用任意图片和多选支持文件模式。
 
 ## 卸载
 

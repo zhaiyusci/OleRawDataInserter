@@ -1,9 +1,16 @@
+param(
+    [int]$TimeoutSeconds = 120
+)
+
 $ErrorActionPreference = 'Stop'
 
 $securityKey = 'HKCU:\Software\Microsoft\Office\16.0\Word\Security'
 $valueName = 'AccessVBOM'
 $hadOriginalValue = $false
 $originalValue = $null
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$timeoutRunner = Join-Path $projectRoot 'tools\run-word-script-with-timeout.ps1'
+$smokeTestScript = Join-Path $PSScriptRoot 'run-word-smoke-test.ps1'
 
 try {
     if (-not (Test-Path $securityKey)) {
@@ -18,7 +25,7 @@ try {
 
     Set-ItemProperty -Path $securityKey -Name $valueName -Type DWord -Value 1
 
-    & (Join-Path $PSScriptRoot 'run-word-smoke-test.ps1')
+    & $timeoutRunner -ScriptPath $smokeTestScript -TimeoutSeconds $TimeoutSeconds
 }
 finally {
     if ($hadOriginalValue) {

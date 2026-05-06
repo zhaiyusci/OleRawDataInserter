@@ -162,6 +162,8 @@ try {
     $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
     Write-Step 'Importing RibbonCallbacks.bas'
     $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
+    Write-Step 'Importing ImageSupportFilesDialog.frm'
+    $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null
     Write-Step "Saving dotm to temporary ASCII path: $tempAddinPath"
     $doc.SaveAs2($tempAddinPath, 15)
     $doc.Close($false)

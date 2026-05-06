@@ -14,6 +14,8 @@ installer/EndUserPackage/Payload/*
 
 # PowerShell and test-generated archives
 test/**/*.zip
+test/sample-plot/display.jpg
+test/sample-plot/support-extra/
 
 # Keep release artifacts for this small end-user add-in project.
 !dist/OleRawDataInserter.dotm

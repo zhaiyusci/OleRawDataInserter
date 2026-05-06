@@ -56,12 +56,12 @@ Public Sub InsertPlotFolderAsOle()
     InsertPlotFolder folderPath
 End Sub
 
-Public Sub ShowUsageHelp()
-    MsgBox BuildUsageHelpText(), vbInformation, DecodeEscapedText("Figure Package \u4F7F\u7528\u8BF4\u660E")
+Public Sub InsertImageSupportFilesAsOle()
+    ImageSupportFilesDialog.Show
 End Sub
 
-Public Sub ShowInsertRawDataDialog()
-    InsertRawDataDialog.Show
+Public Sub ShowUsageHelp()
+    MsgBox BuildUsageHelpText(), vbInformation, DecodeEscapedText("Figure Package \u4F7F\u7528\u8BF4\u660E")
 End Sub
 
 Public Sub InsertPlotImageAsOle()
@@ -118,11 +118,6 @@ End Sub
 Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPath As String)
     Dim fso As Object
     Dim zipPath As String
-    Dim iconPath As String
-    Dim oleObject As InlineShape
-    Dim imgSize As SizeInPoints
-    Dim imageWidth As Double
-    Dim imageHeight As Double
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     imagePath = Trim$(imagePath)
@@ -139,7 +134,57 @@ Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPa
     End If
 
     zipPath = BuildTempZipPath(fso, rawDataPath)
-    CreateZipFromPath rawDataPath, zipPath
+    CreateZipFromPath rawDataPath, zipPath, True
+
+    InsertImageZipAsOle imagePath, zipPath
+End Sub
+
+Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supportFiles As Collection)
+    Dim fso As Object
+    Dim zipPath As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    imagePath = Trim$(imagePath)
+
+    If Not fso.FileExists(imagePath) Then
+        MsgBox "Image file does not exist: " & imagePath, vbCritical
+        Exit Sub
+    End If
+
+    If Not IsSupportedDisplayImage(fso.GetExtensionName(imagePath)) Then
+        MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
+        Exit Sub
+    End If
+
+    If supportFiles Is Nothing Then
+        MsgBox "No support files were selected.", vbExclamation
+        Exit Sub
+    End If
+
+    If supportFiles.Count = 0 Then
+        MsgBox "No support files were selected.", vbExclamation
+        Exit Sub
+    End If
+
+    zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
+    CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
+
+    InsertImageZipAsOle imagePath, zipPath
+End Sub
+
+Private Sub InsertImageZipAsOle(ByVal imagePath As String, ByVal zipPath As String)
+    Dim fso As Object
+    Dim iconPath As String
+    Dim oleObject As InlineShape
+    Dim imgSize As SizeInPoints
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FileExists(zipPath) Then
+        MsgBox "Support zip file does not exist: " & zipPath, vbCritical
+        Exit Sub
+    End If
 
     iconPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterTransparent.ico")
     CreateTransparentIcon iconPath
@@ -205,7 +250,6 @@ End Function
 
 Private Function BuildTempZipPath(ByVal fso As Object, ByVal folderPath As String) As String
     Dim baseName As String
-    Dim stamp As String
 
     If fso.FolderExists(folderPath) Then
         baseName = fso.GetFolder(folderPath).Name
@@ -213,8 +257,14 @@ Private Function BuildTempZipPath(ByVal fso As Object, ByVal folderPath As Strin
         baseName = fso.GetBaseName(folderPath)
     End If
 
+    BuildTempZipPath = BuildTempZipPathFromBase(fso, baseName)
+End Function
+
+Private Function BuildTempZipPathFromBase(ByVal fso As Object, ByVal baseName As String) As String
+    Dim stamp As String
+
     stamp = Format$(Now, "yyyymmdd_hhnnss")
-    BuildTempZipPath = fso.BuildPath(GetTempFolderPath(fso), baseName & "_" & stamp & ".zip")
+    BuildTempZipPathFromBase = fso.BuildPath(GetTempFolderPath(fso), baseName & "_" & stamp & ".zip")
 End Function
 
 Private Function GetTempFolderPath(ByVal fso As Object) As String
@@ -230,18 +280,34 @@ Private Function GetTempFolderPath(ByVal fso As Object) As String
     GetTempFolderPath = tempPath
 End Function
 
+Private Function IsSupportedDisplayImage(ByVal extensionName As String) As Boolean
+    Select Case LCase$(extensionName)
+        Case "png", "jpg", "jpeg", "tif", "tiff"
+            IsSupportedDisplayImage = True
+        Case Else
+            IsSupportedDisplayImage = False
+    End Select
+End Function
+
 Private Function BuildUsageHelpText() As String
     Dim escaped As String
 
     escaped = _
         "Figure Package \u4F7F\u7528\u8BF4\u660E\n\n" & _
-        "1. \u5728\u4E00\u4E2A\u6587\u4EF6\u5939\u4E2D\u51C6\u5907\u7ED8\u56FE\u6240\u9700\u7684\u5185\u5BB9\uFF1Aplot.py\u3001\u539F\u59CB\u6570\u636E\uFF0C\u4EE5\u53CA\u5176\u4ED6\u8F85\u52A9\u811A\u672C\u6216\u56FE\u7247\u3002\n" & _
+        "\u65B9\u5F0F\u4E00\uFF1APlot \u6587\u4EF6\u5939\n" & _
+        "1. \u5728\u4E00\u4E2A\u6587\u4EF6\u5939\u4E2D\u51C6\u5907 plot.py\u3001\u539F\u59CB\u6570\u636E\uFF0C\u4EE5\u53CA\u5176\u4ED6\u8F85\u52A9\u811A\u672C\u6216\u56FE\u7247\u3002\n" & _
         "2. \u8FD0\u884C plot.py \u751F\u6210\u6700\u7EC8\u56FE\u7247 plot.png\u3002plot.png \u5FC5\u987B\u548C plot.py \u653E\u5728\u540C\u4E00\u4E2A\u6587\u4EF6\u5939\u91CC\u3002\n" & _
         "3. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Figure Package\uFF0C\u9009\u62E9\u8FD9\u4E2A\u6587\u4EF6\u5939\u3002\n" & _
-        "4. \u63D2\u4EF6\u4F1A\u628A\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u539F\u59CB\u6570\u636E\u548C\u811A\u672C\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\u3002\n" & _
-        "5. Word \u4E2D\u663E\u793A\u7684\u662F plot.png\uFF1B\u53CC\u51FB\u56FE\u7247\u53EF\u4EE5\u6253\u5F00\u5D4C\u5165\u7684 zip \u5305\uFF0C\u53D6\u51FA\u7ED8\u56FE\u811A\u672C\u548C\u6570\u636E\u3002\n\n" & _
-        "\u6253\u5305\u65F6\u4E0D\u4F1A\u5305\u542B\uFF1Aplot.png\u3001plot.svg\u3001plot.pdf\u3002\n" & _
-        "\u4F1A\u5305\u542B\uFF1Aplot.py\u3001\u5176\u4ED6\u6570\u636E\u6587\u4EF6\u3001\u811A\u672C\u3001\u56FE\u7247\u548C\u5B50\u6587\u4EF6\u5939\u3002"
+        "4. \u63D2\u4EF6\u4F1A\u628A\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u539F\u59CB\u6570\u636E\u548C\u811A\u672C\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F plot.png\u3002\n" & _
+        "5. \u6253\u5305\u65F6\u4E0D\u4F1A\u5305\u542B\u9876\u5C42 plot.png\u3001plot.svg\u3001plot.pdf\uFF1B\u4F1A\u5305\u542B plot.py\u3001\u5176\u4ED6\u6570\u636E\u6587\u4EF6\u3001\u811A\u672C\u3001\u56FE\u7247\u548C\u5B50\u6587\u4EF6\u5939\u3002\n\n" & _
+        "\u65B9\u5F0F\u4E8C\uFF1A\u56FE\u7247 + \u652F\u6301\u6587\u4EF6\n" & _
+        "1. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Image + Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
+        "2. \u5728\u7A97\u53E3\u4E2D\u70B9\u51FB Choose image...\uFF0C\u9009\u62E9\u8981\u663E\u793A\u7684\u56FE\u7247\uFF0C\u652F\u6301 png\u3001jpg\u3001jpeg\u3001tif\u3001tiff\u3002\n" & _
+        "3. \u70B9\u51FB Add files... \u591A\u9009\u9700\u8981\u5D4C\u5165\u7684\u652F\u6301\u6587\u4EF6\uFF0C\u6587\u4EF6\u7C7B\u578B\u4E0D\u9650\uFF1B\u7A97\u53E3\u4E2D\u4F1A\u5217\u51FA\u5DF2\u9009\u62E9\u7684\u6587\u4EF6\u3002\n" & _
+        "4. \u5982\u679C\u9009\u9519\u4E86\uFF0C\u53EF\u4EE5\u7528 Remove selected \u6216 Clear \u8C03\u6574\u5217\u8868\u3002\n" & _
+        "5. \u786E\u8BA4\u56FE\u7247\u548C\u652F\u6301\u6587\u4EF6\u5217\u8868\u65E0\u8BEF\u540E\uFF0C\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u652F\u6301\u6587\u4EF6\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
+        "6. \u5982\u679C\u652F\u6301\u6587\u4EF6\u540C\u540D\uFF0Czip \u5185\u4F1A\u81EA\u52A8\u6539\u540D\uFF0C\u907F\u514D\u8986\u76D6\u3002\n\n" & _
+        "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF1B\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\u3002"
 
     BuildUsageHelpText = DecodeEscapedText(escaped)
 End Function
@@ -276,21 +342,112 @@ Private Function UnicodeChar(ByVal code As Long) As String
     UnicodeChar = ChrW(code)
 End Function
 
-Private Sub CreateZipFromPath(ByVal sourcePath As String, ByVal zipPath As String)
+Private Sub CreateZipFromSupportFiles(ByVal supportFiles As Collection, ByVal zipPath As String, ByVal baseName As String)
+    Dim fso As Object
+    Dim stagingFolder As String
+    Dim errNumber As Long
+    Dim errSource As String
+    Dim errDescription As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    stagingFolder = BuildTempStagingFolderPath(fso, baseName)
+
+    On Error GoTo Failed
+    StageSupportFiles fso, supportFiles, stagingFolder
+    CreateZipFromPath stagingFolder, zipPath, False
+    DeleteFolderIfExists fso, stagingFolder
+    Exit Sub
+
+Failed:
+    errNumber = Err.Number
+    errSource = Err.Source
+    errDescription = Err.Description
+    On Error Resume Next
+    DeleteFolderIfExists fso, stagingFolder
+    If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
+    On Error GoTo 0
+    Err.Raise errNumber, errSource, errDescription
+End Sub
+
+Private Function BuildTempStagingFolderPath(ByVal fso As Object, ByVal baseName As String) As String
+    Dim stamp As String
+
+    stamp = Format$(Now, "yyyymmdd_hhnnss")
+    BuildTempStagingFolderPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserter_" & baseName & "_" & stamp)
+End Function
+
+Private Sub StageSupportFiles(ByVal fso As Object, ByVal supportFiles As Collection, ByVal stagingFolder As String)
+    Dim usedNames As Object
+    Dim filePath As Variant
+    Dim targetName As String
+
+    If supportFiles Is Nothing Then
+        Err.Raise vbObjectError + 520, "StageSupportFiles", "No support files were selected."
+    End If
+
+    If supportFiles.Count = 0 Then
+        Err.Raise vbObjectError + 521, "StageSupportFiles", "No support files were selected."
+    End If
+
+    DeleteFolderIfExists fso, stagingFolder
+    fso.CreateFolder stagingFolder
+    Set usedNames = CreateObject("Scripting.Dictionary")
+
+    For Each filePath In supportFiles
+        If Not fso.FileExists(CStr(filePath)) Then
+            Err.Raise vbObjectError + 522, "StageSupportFiles", "Support file does not exist: " & CStr(filePath)
+        End If
+
+        targetName = GetUniqueStagedFileName(fso, usedNames, fso.GetFileName(CStr(filePath)))
+        fso.CopyFile CStr(filePath), fso.BuildPath(stagingFolder, targetName), True
+    Next filePath
+End Sub
+
+Private Function GetUniqueStagedFileName(ByVal fso As Object, ByVal usedNames As Object, ByVal fileName As String) As String
+    Dim baseName As String
+    Dim extensionName As String
+    Dim candidate As String
+    Dim index As Long
+
+    baseName = fso.GetBaseName(fileName)
+    extensionName = fso.GetExtensionName(fileName)
+    candidate = fileName
+    index = 2
+
+    Do While usedNames.Exists(LCase$(candidate))
+        If Len(extensionName) > 0 Then
+            candidate = baseName & "_" & CStr(index) & "." & extensionName
+        Else
+            candidate = baseName & "_" & CStr(index)
+        End If
+        index = index + 1
+    Loop
+
+    usedNames.Add LCase$(candidate), True
+    GetUniqueStagedFileName = candidate
+End Function
+
+Private Sub DeleteFolderIfExists(ByVal fso As Object, ByVal folderPath As String)
+    If Len(folderPath) > 0 Then
+        If fso.FolderExists(folderPath) Then fso.DeleteFolder folderPath, True
+    End If
+End Sub
+
+Private Sub CreateZipFromPath(ByVal sourcePath As String, ByVal zipPath As String, Optional ByVal excludeGeneratedPlotFiles As Boolean = True)
     Dim fso As Object
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
     On Error Resume Next
-    CreateZipWithTar sourcePath, zipPath
+    CreateZipWithTar sourcePath, zipPath, excludeGeneratedPlotFiles
     If Err.Number = 0 Then
         On Error GoTo 0
         Exit Sub
     End If
     Err.Clear
 
-    CreateZipWithPowerShell sourcePath, zipPath
+    CreateZipWithPowerShell sourcePath, zipPath, excludeGeneratedPlotFiles
     If Err.Number = 0 Then
         On Error GoTo 0
         Exit Sub
@@ -298,11 +455,11 @@ Private Sub CreateZipFromPath(ByVal sourcePath As String, ByVal zipPath As Strin
     Err.Clear
     On Error GoTo 0
 
-    If CreateZipWithShell(sourcePath, zipPath) Then Exit Sub
+    If CreateZipWithShell(sourcePath, zipPath, excludeGeneratedPlotFiles) Then Exit Sub
     Err.Raise vbObjectError + 514, "CreateZipFromFolder", "Failed to create zip file: " & zipPath
 End Sub
 
-Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String)
+Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
     Dim fso As Object
     Dim wsh As Object
     Dim command As String
@@ -312,9 +469,11 @@ Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
     If fso.FolderExists(sourcePath) Then
-        command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath) & _
-            " --exclude=./plot.png --exclude=./plot.svg --exclude=./plot.pdf" & _
-            " -C " & QuoteForCommandLine(sourcePath) & " ."
+        command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath)
+        If excludeGeneratedPlotFiles Then
+            command = command & " --exclude=./plot.png --exclude=./plot.svg --exclude=./plot.pdf"
+        End If
+        command = command & " -C " & QuoteForCommandLine(sourcePath) & " ."
     Else
         command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath) & " -C " & QuoteForCommandLine(fso.GetParentFolderName(sourcePath)) & " " & QuoteForCommandLine(fso.GetFileName(sourcePath))
     End If
@@ -331,7 +490,7 @@ Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String
     End If
 End Sub
 
-Private Function CreateZipWithShell(ByVal sourcePath As String, ByVal zipPath As String) As Boolean
+Private Function CreateZipWithShell(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean) As Boolean
     Dim fso As Object
     Dim shellApp As Object
     Dim zipFolder As Object
@@ -357,7 +516,7 @@ Private Function CreateZipWithShell(ByVal sourcePath As String, ByVal zipPath As
         Set sourceFolder = shellApp.NameSpace(sourcePath)
         If sourceFolder Is Nothing Then GoTo Failed
         For Each sourceItem In sourceFolder.Items
-            If Not IsGeneratedPlotFile(sourceItem.Name) Then
+            If Not excludeGeneratedPlotFiles Or Not IsGeneratedPlotFile(sourceItem.Name) Then
                 zipFolder.CopyHere sourceItem, ZIP_COPY_FLAGS
             End If
         Next sourceItem
@@ -384,7 +543,7 @@ Failed:
     CreateZipWithShell = False
 End Function
 
-Private Sub CreateZipWithPowerShell(ByVal sourcePath As String, ByVal zipPath As String)
+Private Sub CreateZipWithPowerShell(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
     Dim fso As Object
     Dim wsh As Object
     Dim command As String
@@ -395,7 +554,7 @@ Private Sub CreateZipWithPowerShell(ByVal sourcePath As String, ByVal zipPath As
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
     scriptPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterZip.ps1")
-    WriteZipScript scriptPath, sourcePath, zipPath
+    WriteZipScript scriptPath, sourcePath, zipPath, excludeGeneratedPlotFiles
 
     Set wsh = CreateObject("WScript.Shell")
     command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File " & QuoteForCommandLine(scriptPath)
@@ -418,7 +577,7 @@ Private Function QuoteForCommandLine(ByVal value As String) As String
     QuoteForCommandLine = Chr$(34) & Replace(value, Chr$(34), Chr$(34) & Chr$(34)) & Chr$(34)
 End Function
 
-Private Sub WriteZipScript(ByVal scriptPath As String, ByVal sourcePath As String, ByVal zipPath As String)
+Private Sub WriteZipScript(ByVal scriptPath As String, ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
     Dim fileNum As Integer
     Dim scriptText As String
 
@@ -427,10 +586,19 @@ Private Sub WriteZipScript(ByVal scriptPath As String, ByVal sourcePath As Strin
         "$source = Get-Item -LiteralPath " & PowerShellQuote(sourcePath) & " -Force" & vbCrLf & _
         "$destination = " & PowerShellQuote(zipPath) & vbCrLf & _
         "if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Force }" & vbCrLf & _
-        "if ($source.PSIsContainer) {" & vbCrLf & _
-        "    $generated = @('plot.png', 'plot.svg', 'plot.pdf')" & vbCrLf & _
-        "    $items = Get-ChildItem -LiteralPath $source.FullName -Force | Where-Object { $generated -notcontains $_.Name.ToLowerInvariant() }" & vbCrLf & _
-        "    if (-not $items) { throw 'Raw data folder is empty.' }" & vbCrLf & _
+        "if ($source.PSIsContainer) {" & vbCrLf
+
+    If excludeGeneratedPlotFiles Then
+        scriptText = scriptText & _
+            "    $generated = @('plot.png', 'plot.svg', 'plot.pdf')" & vbCrLf & _
+            "    $items = Get-ChildItem -LiteralPath $source.FullName -Force | Where-Object { $generated -notcontains $_.Name.ToLowerInvariant() }" & vbCrLf
+    Else
+        scriptText = scriptText & _
+            "    $items = Get-ChildItem -LiteralPath $source.FullName -Force" & vbCrLf
+    End If
+
+    scriptText = scriptText & _
+        "    if (-not $items) { throw 'Source folder is empty.' }" & vbCrLf & _
         "    Compress-Archive -Path $items.FullName -DestinationPath $destination -Force" & vbCrLf & _
         "} else {" & vbCrLf & _
         "    Compress-Archive -LiteralPath $source.FullName -DestinationPath $destination -Force" & vbCrLf & _

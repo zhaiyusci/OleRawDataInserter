@@ -34,6 +34,7 @@ function Test-SaveDotm {
             $doc.VBProject.Name = 'OleRawDataInserter'
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null
         }
 
         "Calling SaveAs2"
@@ -42,10 +43,20 @@ function Test-SaveDotm {
     }
     finally {
         if ($doc -ne $null) {
-            $doc.Close($false)
+            try {
+                $doc.Close($false)
+            }
+            catch {
+                "Warning: could not close document cleanly: $($_.Exception.Message)"
+            }
         }
         if ($word -ne $null) {
-            $word.Quit()
+            try {
+                $word.Quit()
+            }
+            catch {
+                "Warning: could not quit Word cleanly: $($_.Exception.Message)"
+            }
         }
     }
 }

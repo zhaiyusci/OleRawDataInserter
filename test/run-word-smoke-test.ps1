@@ -5,7 +5,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $sampleDir = Join-Path $ProjectRoot 'test\sample-plot'
+$supportDir = Join-Path $sampleDir 'support-extra'
 $modulePath = Join-Path $ProjectRoot 'src\RawDataOleInserter.bas'
+$dialogPath = Join-Path $ProjectRoot 'src\ImageSupportFilesDialog.frm'
 $logPath = Join-Path $ProjectRoot 'test\word-smoke-test.log'
 
 function Write-Step {
@@ -19,6 +21,7 @@ Set-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format 'yyy
 
 Write-Step 'Preparing sample plot folder'
 New-Item -ItemType Directory -Force -Path $sampleDir | Out-Null
+New-Item -ItemType Directory -Force -Path $supportDir | Out-Null
 
 Add-Type -AssemblyName System.Drawing
 $bitmap = New-Object System.Drawing.Bitmap 640, 360
@@ -31,6 +34,7 @@ $font = New-Object System.Drawing.Font 'Georgia', 28
 $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(50, 50, 46))
 $graphics.DrawString('plot.png smoke test', $font, $brush, 110, 150)
 $bitmap.Save((Join-Path $sampleDir 'plot.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+$bitmap.Save((Join-Path $sampleDir 'display.jpg'), [System.Drawing.Imaging.ImageFormat]::Jpeg)
 $graphics.Dispose()
 $pen.Dispose()
 $font.Dispose()
@@ -39,6 +43,7 @@ $bitmap.Dispose()
 
 Set-Content -LiteralPath (Join-Path $sampleDir 'plot.py') -Encoding UTF8 -Value "print('sample plot source')"
 Set-Content -LiteralPath (Join-Path $sampleDir 'data.csv') -Encoding UTF8 -Value "x,y`n1,2`n2,4"
+Set-Content -LiteralPath (Join-Path $supportDir 'data.csv') -Encoding UTF8 -Value "x,y`n3,9`n4,16"
 
 $word = $null
 $doc = $null
@@ -54,14 +59,27 @@ try {
     $doc = $word.Documents.Add()
     Write-Step 'Importing VBA module'
     $doc.VBProject.VBComponents.Import($modulePath) | Out-Null
+    Write-Step 'Importing support-files dialog'
+    $doc.VBProject.VBComponents.Import($dialogPath) | Out-Null
     Write-Step 'Adding smoke-test runner macro'
     $runner = $doc.VBProject.VBComponents.Add(1)
     $escapedSampleDir = $sampleDir.Replace('"', '""')
+    $escapedDisplayImage = (Join-Path $sampleDir 'display.jpg').Replace('"', '""')
+    $escapedDataPath = (Join-Path $sampleDir 'data.csv').Replace('"', '""')
+    $escapedDuplicateDataPath = (Join-Path $supportDir 'data.csv').Replace('"', '""')
+    $escapedPlotPyPath = (Join-Path $sampleDir 'plot.py').Replace('"', '""')
     $escapedLogPath = $logPath.Replace('"', '""')
     $runner.CodeModule.AddFromString(@"
 Public Sub SmokeTest()
+    Dim supportFiles As Collection
+
     On Error GoTo Failed
     InsertPlotFolder "$escapedSampleDir"
+    Set supportFiles = New Collection
+    supportFiles.Add "$escapedDataPath"
+    supportFiles.Add "$escapedDuplicateDataPath"
+    supportFiles.Add "$escapedPlotPyPath"
+    InsertImageAndSupportFilesAsOle "$escapedDisplayImage", supportFiles
     Open "$escapedLogPath" For Append As #1
     Print #1, Format`$(Now, "yyyy-mm-dd hh:nn:ss") & " VBA SmokeTest OK"
     Close #1
@@ -78,6 +96,9 @@ End Sub
 
     Write-Step 'Macro returned; checking document'
     $shapeCount = $doc.InlineShapes.Count
+    if ($shapeCount -ne 2) {
+        throw "Expected 2 inline shape(s), found $shapeCount"
+    }
 
     [pscustomobject]@{
         Status = 'OK'

@@ -11,6 +11,13 @@
                   screentip="Insert plot.png with source files"
                   supertip="Choose a folder containing plot.png. The add-in embeds the whole folder as a zip OLE object and displays plot.png."
                   onAction="RibbonInsertPlotFolder"/>
+          <button id="btnInsertImageSupportFiles"
+                  label="Insert Image + Files"
+                  size="large"
+                  imageMso="FileAttach"
+                  screentip="Insert an image with selected support files"
+                  supertip="Open a dialog where you can review the selected image and support files before embedding the files as a zip OLE object."
+                  onAction="RibbonInsertImageSupportFiles"/>
           <button id="btnShowUsage"
                   label="Usage"
                   imageMso="Help"

@@ -11,6 +11,10 @@ Public Sub RibbonInsertPlotFolder(ByVal control As IRibbonControl)
     InsertPlotFolderAsOle
 End Sub
 
+Public Sub RibbonInsertImageSupportFiles(ByVal control As IRibbonControl)
+    InsertImageSupportFilesAsOle
+End Sub
+
 Public Sub RibbonShowUsage(ByVal control As IRibbonControl)
     ShowUsageHelp
 End Sub
