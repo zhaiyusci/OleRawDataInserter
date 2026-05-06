@@ -47,10 +47,11 @@ Ribbon XML：
 customUI\customUI14.xml
 ```
 
-当前 Ribbon 有三个按钮：
+当前 Ribbon 有四个按钮：
 
 - `Insert Figure Package`：选择包含 `plot.png` 的图目录并插入 OLE 图包。
 - `Insert Image + Files`：打开确认窗口；用户可以在窗口中选择/查看显示图片和支持文件列表，最后点击 `Insert` 提交。
+- `Attach Files to Image`：选择文档中已有图片后打开确认窗口；用户多选支持文件后，插件把原图片替换成显示外观相同的 zip OLE 对象，并保持原来的大小和位置。
 - `Usage`：弹出终端用户使用说明。
 
 Ribbon 图标：
@@ -199,7 +200,8 @@ powershell -ExecutionPolicy Bypass -File OleRawDataInserter\test\run-word-smoke-
 
 ```text
 VBA SmokeTest OK
-InlineShapes : 2
+InlineShapes : 3
+FloatingShapes : 1
 ```
 
 检查最近生成的 zip 内容：
@@ -256,6 +258,8 @@ tar.exe -a -cf output.zip --exclude=./plot.png --exclude=./plot.svg --exclude=./
 - staging 文件夹再通过 `CreateZipFromPath(..., False)` 打包；这个模式不会排除 `plot.png`、`plot.svg`、`plot.pdf`。
 - zip 创建完成后会删除 staging 文件夹。
 
+`Attach Files to Image` 复用同一套 `CreateZipFromSupportFiles` 多文件打包逻辑。它不会把原图文件放进 zip；原图只作为 OLE 对象的显示外观，zip 里只包含用户选择的支持文件。
+
 ## 图片尺寸实现说明
 
 尺寸入口：
@@ -264,6 +268,9 @@ tar.exe -a -cf output.zip --exclude=./plot.png --exclude=./plot.svg --exclude=./
 GetImagePrintSize
 FitSizeToTextArea
 GetCurrentTextAreaSize
+AttachSupportFilesToInlineImage
+AttachSupportFilesToFloatingImage
+ExtractImageFromOpenXml
 ```
 
 规则：
@@ -274,6 +281,8 @@ GetCurrentTextAreaSize
 - 如果图片原始印刷尺寸能放进版心，则不放大，保持原始印刷尺寸。
 - 如果图片超过版心，则按宽度比例和高度比例中较小的那个等比缩小。
 - 插件会同时设置宽度和高度，缩放比例相同，因此高宽比保持不变。
+- 给已有行内图片添加附件时，先从该图片的 `Range.WordOpenXML` 提取显示图像，再删除原图片并在同一位置插入 OLE 对象，最后恢复原来的 `Width` 和 `Height`。
+- 给已有浮动图片添加附件时，先记录 `Width`、`Height`、`Left`、`Top`、相对定位和环绕方式；随后临时转换为行内图片以提取当前选中图片本身，再插入 OLE、转换回浮动 Shape，并恢复这些位置/布局属性。
 
 ## 发布给用户
 
@@ -290,7 +299,7 @@ release\FigurePackageWordAddinSetup.exe
 1. 关闭 Word。
 2. 双击安装器。
 3. 重新打开 Word。
-4. 在 `Figure Package` 选项卡点击 `Insert Figure Package`，或点击 `Insert Image + Files` 使用任意图片和多选支持文件模式。
+4. 在 `Figure Package` 选项卡点击 `Insert Figure Package`、`Insert Image + Files`，或先选中已有图片再点击 `Attach Files to Image`。
 
 ## 卸载
 

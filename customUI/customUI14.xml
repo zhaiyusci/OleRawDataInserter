@@ -18,6 +18,13 @@
                   screentip="Insert an image with selected support files"
                   supertip="Open a dialog where you can review the selected image and support files before embedding the files as a zip OLE object."
                   onAction="RibbonInsertImageSupportFiles"/>
+          <button id="btnAttachSupportFilesToSelectedImage"
+                  label="Attach Files to Image"
+                  size="large"
+                  imageMso="AttachFile"
+                  screentip="Attach support files to the selected image"
+                  supertip="Select an existing picture in the document, then attach support files while preserving the picture size and position."
+                  onAction="RibbonAttachSupportFilesToSelectedImage"/>
           <button id="btnShowUsage"
                   label="Usage"
                   imageMso="Help"

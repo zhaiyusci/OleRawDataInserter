@@ -60,6 +60,28 @@ Public Sub InsertImageSupportFilesAsOle()
     ImageSupportFilesDialog.Show
 End Sub
 
+Public Sub AttachSupportFilesToSelectedImageAsOle()
+    Dim inlineImage As InlineShape
+    Dim floatingImage As Shape
+    Dim dialog As ImageSupportFilesDialog
+
+    If TryGetSelectedInlineImage(inlineImage) Then
+        Set dialog = New ImageSupportFilesDialog
+        dialog.ConfigureForSelectedInlineImage inlineImage
+        dialog.Show
+        Exit Sub
+    End If
+
+    If TryGetSelectedFloatingImage(floatingImage) Then
+        Set dialog = New ImageSupportFilesDialog
+        dialog.ConfigureForSelectedFloatingImage floatingImage
+        dialog.Show
+        Exit Sub
+    End If
+
+    MsgBox "Please select an existing picture in the Word document first.", vbExclamation
+End Sub
+
 Public Sub ShowUsageHelp()
     MsgBox BuildUsageHelpText(), vbInformation, DecodeEscapedText("Figure Package \u4F7F\u7528\u8BF4\u660E")
 End Sub
@@ -139,6 +161,109 @@ Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPa
     InsertImageZipAsOle imagePath, zipPath
 End Sub
 
+Public Sub AttachSupportFilesToInlineImage(ByVal targetInlineShape As Object, ByVal supportFiles As Collection)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim zipPath As String
+    Dim targetRange As Range
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetInlineShape Is Nothing Then
+        MsgBox "The selected image is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    ValidateSupportFiles supportFiles
+
+    imagePath = ExtractImageFromOpenXml(CStr(targetInlineShape.Range.WordOpenXML), "selected_image")
+    zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
+    CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
+
+    imageWidth = targetInlineShape.Width
+    imageHeight = targetInlineShape.Height
+    Set targetRange = targetInlineShape.Range.Duplicate
+    targetRange.Collapse wdCollapseStart
+
+    targetInlineShape.Delete
+    targetRange.Select
+    InsertImageZipAsOleWithSize imagePath, zipPath, imageWidth, imageHeight
+End Sub
+
+Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal supportFiles As Collection)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim zipPath As String
+    Dim anchorRange As Range
+    Dim convertedInline As InlineShape
+    Dim oleInline As InlineShape
+    Dim oleShape As Shape
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim imageLeft As Single
+    Dim imageTop As Single
+    Dim relativeHorizontalPosition As Long
+    Dim relativeVerticalPosition As Long
+    Dim wrapType As Long
+    Dim layoutInCell As Long
+    Dim lockAnchor As Boolean
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetShape Is Nothing Then
+        MsgBox "The selected image is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    If Not IsFloatingPictureShape(targetShape) Then
+        MsgBox "Please select a picture, not another kind of floating object.", vbExclamation
+        Exit Sub
+    End If
+
+    ValidateSupportFiles supportFiles
+
+    imageWidth = targetShape.Width
+    imageHeight = targetShape.Height
+    imageLeft = targetShape.Left
+    imageTop = targetShape.Top
+    relativeHorizontalPosition = targetShape.RelativeHorizontalPosition
+    relativeVerticalPosition = targetShape.RelativeVerticalPosition
+    wrapType = targetShape.WrapFormat.Type
+    layoutInCell = targetShape.LayoutInCell
+    lockAnchor = targetShape.LockAnchor
+
+    ' Convert the selected floating picture temporarily so the OpenXML only contains that image.
+    Set convertedInline = targetShape.ConvertToInlineShape
+    imagePath = ExtractImageFromOpenXml(CStr(convertedInline.Range.WordOpenXML), "selected_image")
+    zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
+    CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
+
+    Set anchorRange = convertedInline.Range.Duplicate
+    anchorRange.Collapse wdCollapseStart
+    convertedInline.Delete
+    anchorRange.Select
+    Set oleInline = AddImageZipOleInline(imagePath, zipPath)
+    oleInline.Width = imageWidth
+    oleInline.Height = imageHeight
+
+    On Error Resume Next
+    Set oleShape = oleInline.ConvertToShape
+    If Not oleShape Is Nothing Then
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.RelativeHorizontalPosition = relativeHorizontalPosition
+        oleShape.RelativeVerticalPosition = relativeVerticalPosition
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
+        oleShape.WrapFormat.Type = wrapType
+        oleShape.LayoutInCell = layoutInCell
+        oleShape.LockAnchor = lockAnchor
+        oleShape.Fill.Visible = msoTrue
+        oleShape.Fill.UserPicture imagePath
+    End If
+    On Error GoTo 0
+End Sub
+
 Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supportFiles As Collection)
     Dim fso As Object
     Dim zipPath As String
@@ -173,26 +298,38 @@ Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supp
 End Sub
 
 Private Sub InsertImageZipAsOle(ByVal imagePath As String, ByVal zipPath As String)
-    Dim fso As Object
-    Dim iconPath As String
-    Dim oleObject As InlineShape
     Dim imgSize As SizeInPoints
     Dim imageWidth As Double
     Dim imageHeight As Double
-
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    If Not fso.FileExists(zipPath) Then
-        MsgBox "Support zip file does not exist: " & zipPath, vbCritical
-        Exit Sub
-    End If
-
-    iconPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterTransparent.ico")
-    CreateTransparentIcon iconPath
 
     imgSize = GetImagePrintSize(imagePath)
     imageWidth = imgSize.Width
     imageHeight = imgSize.Height
     FitSizeToTextArea imageWidth, imageHeight
+
+    InsertImageZipAsOleWithSize imagePath, zipPath, imageWidth, imageHeight
+End Sub
+
+Private Sub InsertImageZipAsOleWithSize(ByVal imagePath As String, ByVal zipPath As String, ByVal imageWidth As Double, ByVal imageHeight As Double)
+    Dim oleObject As InlineShape
+
+    Set oleObject = AddImageZipOleInline(imagePath, zipPath)
+    oleObject.Width = imageWidth
+    oleObject.Height = imageHeight
+End Sub
+
+Private Function AddImageZipOleInline(ByVal imagePath As String, ByVal zipPath As String) As InlineShape
+    Dim fso As Object
+    Dim iconPath As String
+    Dim oleObject As InlineShape
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FileExists(zipPath) Then
+        Err.Raise vbObjectError + 530, "AddImageZipOleInline", "Support zip file does not exist: " & zipPath
+    End If
+
+    iconPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterTransparent.ico")
+    CreateTransparentIcon iconPath
 
     Set oleObject = Selection.InlineShapes.AddOLEObject( _
         FileName:=zipPath, _
@@ -202,16 +339,15 @@ Private Sub InsertImageZipAsOle(ByVal imagePath As String, ByVal zipPath As Stri
         IconIndex:=0, _
         IconLabel:=vbNullString)
 
-    oleObject.Width = imageWidth
-    oleObject.Height = imageHeight
-
     On Error Resume Next
     oleObject.Borders.Enable = False
     oleObject.Line.Visible = msoFalse
     oleObject.Fill.Visible = msoTrue
     oleObject.Fill.UserPicture imagePath
     On Error GoTo 0
-End Sub
+
+    Set AddImageZipOleInline = oleObject
+End Function
 
 Private Function PickPlotFolder() As String
     With Application.FileDialog(msoFileDialogFolderPicker)
@@ -289,6 +425,46 @@ Private Function IsSupportedDisplayImage(ByVal extensionName As String) As Boole
     End Select
 End Function
 
+Private Function TryGetSelectedInlineImage(ByRef inlineImage As InlineShape) As Boolean
+    On Error Resume Next
+    If Selection.InlineShapes.Count > 0 Then
+        Set inlineImage = Selection.InlineShapes(1)
+    End If
+    On Error GoTo 0
+
+    If Not inlineImage Is Nothing Then
+        If Not IsInlinePictureShape(inlineImage) Then Set inlineImage = Nothing
+    End If
+
+    TryGetSelectedInlineImage = Not inlineImage Is Nothing
+End Function
+
+Private Function TryGetSelectedFloatingImage(ByRef floatingImage As Shape) As Boolean
+    On Error Resume Next
+    If Selection.ShapeRange.Count > 0 Then
+        Set floatingImage = Selection.ShapeRange(1)
+    End If
+    On Error GoTo 0
+
+    If Not floatingImage Is Nothing Then
+        If Not IsFloatingPictureShape(floatingImage) Then Set floatingImage = Nothing
+    End If
+
+    TryGetSelectedFloatingImage = Not floatingImage Is Nothing
+End Function
+
+Private Function IsInlinePictureShape(ByVal inlineImage As Object) As Boolean
+    On Error Resume Next
+    IsInlinePictureShape = (inlineImage.Type = wdInlineShapePicture Or inlineImage.Type = wdInlineShapeLinkedPicture)
+    On Error GoTo 0
+End Function
+
+Private Function IsFloatingPictureShape(ByVal floatingImage As Object) As Boolean
+    On Error Resume Next
+    IsFloatingPictureShape = (floatingImage.Type = msoPicture Or floatingImage.Type = msoLinkedPicture)
+    On Error GoTo 0
+End Function
+
 Private Function BuildUsageHelpText() As String
     Dim escaped As String
 
@@ -307,7 +483,12 @@ Private Function BuildUsageHelpText() As String
         "4. \u5982\u679C\u9009\u9519\u4E86\uFF0C\u53EF\u4EE5\u7528 Remove selected \u6216 Clear \u8C03\u6574\u5217\u8868\u3002\n" & _
         "5. \u786E\u8BA4\u56FE\u7247\u548C\u652F\u6301\u6587\u4EF6\u5217\u8868\u65E0\u8BEF\u540E\uFF0C\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u652F\u6301\u6587\u4EF6\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
         "6. \u5982\u679C\u652F\u6301\u6587\u4EF6\u540C\u540D\uFF0Czip \u5185\u4F1A\u81EA\u52A8\u6539\u540D\uFF0C\u907F\u514D\u8986\u76D6\u3002\n\n" & _
-        "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF1B\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\u3002"
+        "\u65B9\u5F0F\u4E09\uFF1A\u7ED9\u5DF2\u6709\u56FE\u7247\u6DFB\u52A0\u9644\u4EF6\n" & _
+        "1. \u5148\u5728 Word \u6587\u6863\u4E2D\u9009\u4E2D\u4E00\u5F20\u5DF2\u7ECF\u63D2\u5165\u7684\u56FE\u7247\u3002\n" & _
+        "2. \u70B9\u51FB Figure Package > Attach Files to Image\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
+        "3. \u6DFB\u52A0\u5E76\u786E\u8BA4\u652F\u6301\u6587\u4EF6\u540E\u70B9\u51FB Insert\u3002\n" & _
+        "4. \u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4ECD\u7136\u662F\u539F\u56FE\u7247\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n\n" & _
+        "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u65B0\u63D2\u5165\u56FE\u7247\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF0C\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\uFF1B\u7ED9\u5DF2\u6709\u56FE\u7247\u6DFB\u52A0\u9644\u4EF6\u65F6\u4FDD\u6301\u539F\u56FE\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002"
 
     BuildUsageHelpText = DecodeEscapedText(escaped)
 End Function
@@ -342,6 +523,118 @@ Private Function UnicodeChar(ByVal code As Long) As String
     UnicodeChar = ChrW(code)
 End Function
 
+Private Sub ValidateSupportFiles(ByVal supportFiles As Collection)
+    If supportFiles Is Nothing Then
+        Err.Raise vbObjectError + 520, "ValidateSupportFiles", "No support files were selected."
+    End If
+
+    If supportFiles.Count = 0 Then
+        Err.Raise vbObjectError + 521, "ValidateSupportFiles", "No support files were selected."
+    End If
+End Sub
+
+Private Function ExtractImageFromOpenXml(ByVal openXml As String, ByVal baseName As String) As String
+    Dim xmlDoc As Object
+    Dim imageParts As Object
+    Dim imagePart As Object
+    Dim binaryNode As Object
+    Dim partName As String
+    Dim contentType As String
+    Dim extensionName As String
+    Dim fso As Object
+    Dim outputPath As String
+
+    Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
+    xmlDoc.async = False
+    xmlDoc.validateOnParse = False
+
+    If Not xmlDoc.LoadXML(openXml) Then
+        Err.Raise vbObjectError + 531, "ExtractImageFromOpenXml", "Could not read the selected image XML."
+    End If
+
+    xmlDoc.setProperty "SelectionNamespaces", "xmlns:pkg='http://schemas.microsoft.com/office/2006/xmlPackage'"
+    Set imageParts = xmlDoc.SelectNodes("//pkg:part[starts-with(@pkg:contentType, 'image/')]")
+    If imageParts Is Nothing Then
+        Err.Raise vbObjectError + 532, "ExtractImageFromOpenXml", "Could not find image data in the selected picture."
+    End If
+    If imageParts.Length = 0 Then
+        Err.Raise vbObjectError + 532, "ExtractImageFromOpenXml", "Could not find image data in the selected picture."
+    End If
+
+    Set imagePart = imageParts.Item(0)
+    Set binaryNode = imagePart.SelectSingleNode("pkg:binaryData")
+    If binaryNode Is Nothing Then
+        Err.Raise vbObjectError + 533, "ExtractImageFromOpenXml", "Could not find embedded image bytes in the selected picture."
+    End If
+
+    partName = CStr(imagePart.getAttribute("pkg:name"))
+    contentType = CStr(imagePart.getAttribute("pkg:contentType"))
+    extensionName = GetImageExtensionFromOpenXmlPart(partName, contentType)
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    outputPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & "." & extensionName)
+    WriteBase64ToFile CStr(binaryNode.Text), outputPath
+    ExtractImageFromOpenXml = outputPath
+End Function
+
+Private Function GetImageExtensionFromOpenXmlPart(ByVal partName As String, ByVal contentType As String) As String
+    Dim fso As Object
+    Dim extensionName As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    extensionName = LCase$(fso.GetExtensionName(partName))
+    If Len(extensionName) > 0 Then
+        GetImageExtensionFromOpenXmlPart = extensionName
+        Exit Function
+    End If
+
+    Select Case LCase$(contentType)
+        Case "image/png"
+            GetImageExtensionFromOpenXmlPart = "png"
+        Case "image/jpeg", "image/jpg"
+            GetImageExtensionFromOpenXmlPart = "jpg"
+        Case "image/tiff"
+            GetImageExtensionFromOpenXmlPart = "tif"
+        Case "image/x-emf"
+            GetImageExtensionFromOpenXmlPart = "emf"
+        Case Else
+            GetImageExtensionFromOpenXmlPart = "png"
+    End Select
+End Function
+
+Private Function SanitizeFileName(ByVal value As String) As String
+    Dim invalidChars As String
+    Dim i As Long
+    Dim ch As String
+
+    invalidChars = "\/:*?""<>|"
+    SanitizeFileName = Trim$(value)
+    If Len(SanitizeFileName) = 0 Then SanitizeFileName = "selected_image"
+
+    For i = 1 To Len(invalidChars)
+        ch = Mid$(invalidChars, i, 1)
+        SanitizeFileName = Replace(SanitizeFileName, ch, "_")
+    Next i
+End Function
+
+Private Sub WriteBase64ToFile(ByVal base64Text As String, ByVal outputPath As String)
+    Dim xmlDoc As Object
+    Dim node As Object
+    Dim stream As Object
+
+    Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
+    Set node = xmlDoc.createElement("base64")
+    node.DataType = "bin.base64"
+    node.Text = base64Text
+
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1
+    stream.Open
+    stream.Write node.nodeTypedValue
+    stream.SaveToFile outputPath, 2
+    stream.Close
+End Sub
+
 Private Sub CreateZipFromSupportFiles(ByVal supportFiles As Collection, ByVal zipPath As String, ByVal baseName As String)
     Dim fso As Object
     Dim stagingFolder As String
@@ -353,6 +646,7 @@ Private Sub CreateZipFromSupportFiles(ByVal supportFiles As Collection, ByVal zi
     stagingFolder = BuildTempStagingFolderPath(fso, baseName)
 
     On Error GoTo Failed
+    ValidateSupportFiles supportFiles
     StageSupportFiles fso, supportFiles, stagingFolder
     CreateZipFromPath stagingFolder, zipPath, False
     DeleteFolderIfExists fso, stagingFolder

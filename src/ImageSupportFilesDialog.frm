@@ -15,6 +15,22 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
 
+Private attachToSelectedImage As Boolean
+Private targetInlineImage As Object
+Private targetFloatingImage As Object
+
+Public Sub ConfigureForSelectedInlineImage(ByVal inlineImage As Object)
+    attachToSelectedImage = True
+    Set targetInlineImage = inlineImage
+    ConfigureForSelectedImageMode
+End Sub
+
+Public Sub ConfigureForSelectedFloatingImage(ByVal floatingImage As Object)
+    attachToSelectedImage = True
+    Set targetFloatingImage = floatingImage
+    ConfigureForSelectedImageMode
+End Sub
+
 Private Sub UserForm_Initialize()
     UpdateDialogState
 End Sub
@@ -73,15 +89,17 @@ Private Sub cmdInsert_Click()
     Dim imagePath As String
     Dim i As Long
 
-    imagePath = Trim$(txtImagePath.Text)
-    If Len(imagePath) = 0 Then
-        MsgBox "Please choose an image.", vbExclamation
-        Exit Sub
-    End If
+    If Not attachToSelectedImage Then
+        imagePath = Trim$(txtImagePath.Text)
+        If Len(imagePath) = 0 Then
+            MsgBox "Please choose an image.", vbExclamation
+            Exit Sub
+        End If
 
-    If Not IsDialogSupportedImage(imagePath) Then
-        MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
-        Exit Sub
+        If Not IsDialogSupportedImage(imagePath) Then
+            MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
+            Exit Sub
+        End If
     End If
 
     If lstSupportFiles.ListCount = 0 Then
@@ -94,7 +112,19 @@ Private Sub cmdInsert_Click()
         supportFiles.Add CStr(lstSupportFiles.List(i))
     Next i
 
-    InsertImageAndSupportFilesAsOle imagePath, supportFiles
+    If attachToSelectedImage Then
+        If Not targetInlineImage Is Nothing Then
+            AttachSupportFilesToInlineImage targetInlineImage, supportFiles
+        ElseIf Not targetFloatingImage Is Nothing Then
+            AttachSupportFilesToFloatingImage targetFloatingImage, supportFiles
+        Else
+            MsgBox "The selected image is no longer available.", vbExclamation
+            Exit Sub
+        End If
+    Else
+        InsertImageAndSupportFilesAsOle imagePath, supportFiles
+    End If
+
     Unload Me
 End Sub
 
@@ -116,14 +146,35 @@ Private Sub AddSupportFileIfMissing(ByVal filePath As String)
     lstSupportFiles.AddItem filePath
 End Sub
 
+Private Sub ConfigureForSelectedImageMode()
+    Caption = "Attach Files to Selected Image"
+    lblIntro.Caption = "Review the support files before attaching them to the selected image. The selected image will be replaced by an OLE object while keeping its size and position."
+    lblImage.Caption = "Selected image in current document"
+    txtImagePath.Text = "Selected image in current document"
+    txtImagePath.Enabled = False
+    cmdBrowseImage.Enabled = False
+    UpdateDialogState
+End Sub
+
 Private Sub UpdateDialogState()
+    Dim hasImage As Boolean
+
+    hasImage = attachToSelectedImage Or Len(Trim$(txtImagePath.Text)) > 0
     lblSupportFiles.Caption = "Support files (" & CStr(lstSupportFiles.ListCount) & " selected)"
-    cmdInsert.Enabled = (Len(Trim$(txtImagePath.Text)) > 0 And lstSupportFiles.ListCount > 0)
+    cmdInsert.Enabled = (hasImage And lstSupportFiles.ListCount > 0)
 
     If cmdInsert.Enabled Then
-        lblSummary.Caption = "Ready. Click Insert to embed the selected support files and display the chosen image."
+        If attachToSelectedImage Then
+            lblSummary.Caption = "Ready. Click Insert to attach the selected support files while preserving the selected image size and position."
+        Else
+            lblSummary.Caption = "Ready. Click Insert to embed the selected support files and display the chosen image."
+        End If
     Else
-        lblSummary.Caption = "Choose an image and at least one support file."
+        If attachToSelectedImage Then
+            lblSummary.Caption = "Add at least one support file."
+        Else
+            lblSummary.Caption = "Choose an image and at least one support file."
+        End If
     End If
 End Sub
 

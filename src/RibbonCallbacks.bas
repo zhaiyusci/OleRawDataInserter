@@ -15,6 +15,10 @@ Public Sub RibbonInsertImageSupportFiles(ByVal control As IRibbonControl)
     InsertImageSupportFilesAsOle
 End Sub
 
+Public Sub RibbonAttachSupportFilesToSelectedImage(ByVal control As IRibbonControl)
+    AttachSupportFilesToSelectedImageAsOle
+End Sub
+
 Public Sub RibbonShowUsage(ByVal control As IRibbonControl)
     ShowUsageHelp
 End Sub

@@ -72,6 +72,9 @@ try {
     $runner.CodeModule.AddFromString(@"
 Public Sub SmokeTest()
     Dim supportFiles As Collection
+    Dim existingPicture As InlineShape
+    Dim existingFloatingPicture As Shape
+    Dim floatingAnchor As Range
 
     On Error GoTo Failed
     InsertPlotFolder "$escapedSampleDir"
@@ -80,6 +83,23 @@ Public Sub SmokeTest()
     supportFiles.Add "$escapedDuplicateDataPath"
     supportFiles.Add "$escapedPlotPyPath"
     InsertImageAndSupportFilesAsOle "$escapedDisplayImage", supportFiles
+    Set existingPicture = Selection.InlineShapes.AddPicture("$escapedDisplayImage", False, True)
+    existingPicture.Width = 180
+    existingPicture.Height = 101.25
+    Set supportFiles = New Collection
+    supportFiles.Add "$escapedDataPath"
+    supportFiles.Add "$escapedDuplicateDataPath"
+    AttachSupportFilesToInlineImage existingPicture, supportFiles
+    Set floatingAnchor = ActiveDocument.Range(ActiveDocument.Content.End - 1, ActiveDocument.Content.End - 1)
+    Set existingFloatingPicture = ActiveDocument.Shapes.AddPicture("$escapedDisplayImage", False, True, 72, 144, 160, 90, floatingAnchor)
+    existingFloatingPicture.RelativeHorizontalPosition = wdRelativeHorizontalPositionPage
+    existingFloatingPicture.RelativeVerticalPosition = wdRelativeVerticalPositionPage
+    existingFloatingPicture.Left = 72
+    existingFloatingPicture.Top = 144
+    existingFloatingPicture.WrapFormat.Type = wdWrapSquare
+    Set supportFiles = New Collection
+    supportFiles.Add "$escapedDataPath"
+    AttachSupportFilesToFloatingImage existingFloatingPicture, supportFiles
     Open "$escapedLogPath" For Append As #1
     Print #1, Format`$(Now, "yyyy-mm-dd hh:nn:ss") & " VBA SmokeTest OK"
     Close #1
@@ -96,17 +116,39 @@ End Sub
 
     Write-Step 'Macro returned; checking document'
     $shapeCount = $doc.InlineShapes.Count
-    if ($shapeCount -ne 2) {
-        throw "Expected 2 inline shape(s), found $shapeCount"
+    if ($shapeCount -ne 3) {
+        throw "Expected 3 inline shape(s), found $shapeCount"
+    }
+    $attachedShape = $doc.InlineShapes.Item(3)
+    if ([math]::Abs($attachedShape.Width - 180) -gt 0.5 -or [math]::Abs($attachedShape.Height - 101.25) -gt 0.5) {
+        throw "Expected attached image size 180 x 101.25 pt, found $([math]::Round($attachedShape.Width, 2)) x $([math]::Round($attachedShape.Height, 2)) pt"
+    }
+    $floatingShapeCount = $doc.Shapes.Count
+    if ($floatingShapeCount -ne 1) {
+        throw "Expected 1 floating shape, found $floatingShapeCount"
+    }
+    $attachedFloatingShape = $doc.Shapes.Item(1)
+    if ([math]::Abs($attachedFloatingShape.Width - 160) -gt 0.5 -or [math]::Abs($attachedFloatingShape.Height - 90) -gt 0.5) {
+        throw "Expected attached floating image size 160 x 90 pt, found $([math]::Round($attachedFloatingShape.Width, 2)) x $([math]::Round($attachedFloatingShape.Height, 2)) pt"
+    }
+    if ([math]::Abs($attachedFloatingShape.Left - 72) -gt 0.5 -or [math]::Abs($attachedFloatingShape.Top - 144) -gt 0.5) {
+        throw "Expected attached floating image position 72 x 144 pt, found $([math]::Round($attachedFloatingShape.Left, 2)) x $([math]::Round($attachedFloatingShape.Top, 2)) pt"
     }
 
     [pscustomobject]@{
         Status = 'OK'
         SampleFolder = $sampleDir
         InlineShapes = $shapeCount
+        AttachedWidth = [math]::Round($attachedShape.Width, 2)
+        AttachedHeight = [math]::Round($attachedShape.Height, 2)
+        FloatingShapes = $floatingShapeCount
+        FloatingWidth = [math]::Round($attachedFloatingShape.Width, 2)
+        FloatingHeight = [math]::Round($attachedFloatingShape.Height, 2)
+        FloatingLeft = [math]::Round($attachedFloatingShape.Left, 2)
+        FloatingTop = [math]::Round($attachedFloatingShape.Top, 2)
     } | Format-List
 
-    Write-Step "Completed smoke test with $shapeCount inline shape(s)"
+    Write-Step "Completed smoke test with $shapeCount inline shape(s) and $floatingShapeCount floating shape(s)"
 }
 finally {
     if ($doc -ne $null) {
