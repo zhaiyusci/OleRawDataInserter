@@ -235,11 +235,10 @@ tar.exe -tf $zip.FullName
 期望规则：
 
 - 不出现外层 `sample-plot/`。
+- 不出现 `.` 或 `./` 根目录项。
 - 不包含 `plot.png`、`plot.svg`、`plot.pdf`。
 - 包含 `plot.py`。
 - 包含其他数据和图片。
-
-注意：`tar.exe -tf` 可能显示一个 `./` 根目录项。这不是多套一层文件夹，只是 zip 根目录记录；Windows 解压时不会生成额外父文件夹。
 
 ## 打包实现说明
 
@@ -261,10 +260,10 @@ CreateZipFromSupportFiles
 `Insert Figure Package` 的文件夹模式会排除顶层生成图文件。`tar.exe` 命令形态：
 
 ```text
-tar.exe -a -cf output.zip --exclude=./plot.png --exclude=./plot.svg --exclude=./plot.pdf -C sourceFolder .
+tar.exe -a -cf output.zip -C sourceFolder -- item1 item2 ...
 ```
 
-这里 `-C sourceFolder .` 的作用是把源文件夹的内容放到 zip 根目录，而不是把源文件夹本身放进去。
+这里不会使用 `-C sourceFolder .`，因为它会让部分工具显示一个 `.` / `./` 根目录项。VBA 会枚举源文件夹的顶层文件和子文件夹，只把这些条目传给 `tar.exe`；顶层 `plot.png`、`plot.svg`、`plot.pdf` 在枚举阶段直接跳过。如果排除后没有任何条目，则创建真正的空 zip。
 
 `Insert Image + Files` 的多文件模式会先创建临时 staging 文件夹：
 

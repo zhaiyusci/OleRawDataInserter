@@ -1606,19 +1606,21 @@ Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String
     Dim fso As Object
     Dim wsh As Object
     Dim command As String
+    Dim itemArguments As String
     Dim exitCode As Long
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
     If fso.FolderExists(sourcePath) Then
-        command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath)
-        If excludeGeneratedPlotFiles Then
-            command = command & " --exclude=./plot.png --exclude=./plot.svg --exclude=./plot.pdf"
+        itemArguments = BuildTarFolderItemArguments(fso, sourcePath, excludeGeneratedPlotFiles)
+        If Len(itemArguments) = 0 Then
+            CreateEmptyZip zipPath
+            Exit Sub
         End If
-        command = command & " -C " & QuoteForCommandLine(sourcePath) & " ."
+        command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath) & " -C " & QuoteForCommandLine(sourcePath) & " -- " & itemArguments
     Else
-        command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath) & " -C " & QuoteForCommandLine(fso.GetParentFolderName(sourcePath)) & " " & QuoteForCommandLine(fso.GetFileName(sourcePath))
+        command = "cmd.exe /c tar.exe -a -cf " & QuoteForCommandLine(zipPath) & " -C " & QuoteForCommandLine(fso.GetParentFolderName(sourcePath)) & " -- " & QuoteForCommandLine(fso.GetFileName(sourcePath))
     End If
 
     Set wsh = CreateObject("WScript.Shell")
@@ -1632,6 +1634,27 @@ Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String
         Err.Raise vbObjectError + 516, "CreateZipWithTar", "tar.exe did not create zip file: " & zipPath
     End If
 End Sub
+
+Private Function BuildTarFolderItemArguments(ByVal fso As Object, ByVal sourceFolderPath As String, ByVal excludeGeneratedPlotFiles As Boolean) As String
+    Dim sourceFolder As Object
+    Dim subFolder As Object
+    Dim fileItem As Object
+    Dim arguments As String
+
+    Set sourceFolder = fso.GetFolder(sourceFolderPath)
+
+    For Each subFolder In sourceFolder.SubFolders
+        arguments = arguments & " " & QuoteForCommandLine(subFolder.Name)
+    Next subFolder
+
+    For Each fileItem In sourceFolder.Files
+        If Not excludeGeneratedPlotFiles Or Not IsGeneratedPlotFile(fileItem.Name) Then
+            arguments = arguments & " " & QuoteForCommandLine(fileItem.Name)
+        End If
+    Next fileItem
+
+    BuildTarFolderItemArguments = Trim$(arguments)
+End Function
 
 Private Function CreateZipWithShell(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean) As Boolean
     Dim fso As Object

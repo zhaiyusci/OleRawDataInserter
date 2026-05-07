@@ -78,6 +78,7 @@ try {
 Public Sub SmokeTest()
     Dim supportFiles As Collection
     Dim keepEntries As Collection
+    Dim initialZipPath As String
     Dim managedZipPath As String
     Dim managedEntries As Collection
     Dim existingPicture As InlineShape
@@ -86,6 +87,8 @@ Public Sub SmokeTest()
 
     On Error GoTo Failed
     InsertPlotFolder "$escapedSampleDir"
+    initialZipPath = ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(1))
+    AssertNoRawRootZipEntry initialZipPath
     Set keepEntries = New Collection
     keepEntries.Add "plot.py"
     Set supportFiles = New Collection
@@ -137,6 +140,42 @@ Private Function CollectionContainsText(ByVal values As Collection, ByVal expect
             Exit Function
         End If
     Next value
+End Function
+
+Private Sub AssertNoRawRootZipEntry(ByVal zipPath As String)
+    Dim fso As Object
+    Dim wsh As Object
+    Dim listPath As String
+    Dim command As String
+    Dim exitCode As Long
+    Dim fileNum As Integer
+    Dim lineText As String
+    Dim normalizedLine As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set wsh = CreateObject("WScript.Shell")
+    listPath = fso.BuildPath(fso.GetSpecialFolder(2), "OleRawDataInserterSmokeZipList_" & Format(Now, "yyyymmdd_hhnnss") & ".txt")
+    command = "cmd.exe /c tar.exe -tf " & QuoteForTestCommandLine(zipPath) & " > " & QuoteForTestCommandLine(listPath)
+    exitCode = wsh.Run(command, 0, True)
+    If exitCode <> 0 Then Err.Raise vbObjectError + 903, "SmokeTest", "tar.exe failed to list initial zip entries"
+
+    fileNum = FreeFile
+    Open listPath For Input As #fileNum
+    Do While Not EOF(fileNum)
+        Line Input #fileNum, lineText
+        normalizedLine = Trim(Replace(lineText, "\", "/"))
+        If normalizedLine = "." Or normalizedLine = "./" Then
+            Close #fileNum
+            fso.DeleteFile listPath, True
+            Err.Raise vbObjectError + 904, "SmokeTest", "Initial zip contains a raw root entry: " & lineText
+        End If
+    Loop
+    Close #fileNum
+    fso.DeleteFile listPath, True
+End Sub
+
+Private Function QuoteForTestCommandLine(ByVal value As String) As String
+    QuoteForTestCommandLine = Chr(34) & Replace(value, Chr(34), Chr(34) & Chr(34)) & Chr(34)
 End Function
 "@)
 

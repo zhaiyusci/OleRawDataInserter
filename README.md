@@ -62,6 +62,7 @@ Windows Settings -> Installed apps -> Figure Package Word Add-in -> Uninstall
 压缩包内容规则：
 
 - 不额外套一层父文件夹。
+- 不生成 `.` / `./` 根目录项。
 - 排除顶层生成图文件：`plot.png`、`plot.svg`、`plot.pdf`。
 - 保留核心绘图脚本：`plot.py`。
 - 保留其他数据、脚本、图片和子文件夹。
