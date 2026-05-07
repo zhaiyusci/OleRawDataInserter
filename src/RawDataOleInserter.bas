@@ -46,6 +46,8 @@ End Type
 
 Private Const ZIP_COPY_FLAGS As Long = 4 + 16
 Private Const DEFAULT_DPI As Double = 96#
+Private Const CFB_END_OF_CHAIN As Long = -2
+Private Const CFB_FREE_SECTOR As Long = -1
 
 Public Sub InsertPlotFolderAsOle()
     Dim folderPath As String
@@ -62,12 +64,21 @@ End Sub
 
 Public Sub AttachSupportFilesToSelectedImageAsOle()
     Dim inlineImage As InlineShape
+    Dim inlineOle As InlineShape
     Dim floatingImage As Shape
+    Dim floatingOle As Shape
     Dim dialog As ImageSupportFilesDialog
 
     If TryGetSelectedInlineImage(inlineImage) Then
         Set dialog = New ImageSupportFilesDialog
         dialog.ConfigureForSelectedInlineImage inlineImage
+        dialog.Show
+        Exit Sub
+    End If
+
+    If TryGetSelectedInlineOlePackage(inlineOle) Then
+        Set dialog = New ImageSupportFilesDialog
+        dialog.ConfigureForSelectedInlineOle inlineOle
         dialog.Show
         Exit Sub
     End If
@@ -79,11 +90,18 @@ Public Sub AttachSupportFilesToSelectedImageAsOle()
         Exit Sub
     End If
 
-    MsgBox "Please select an existing picture in the Word document first.", vbExclamation
+    If TryGetSelectedFloatingOlePackage(floatingOle) Then
+        Set dialog = New ImageSupportFilesDialog
+        dialog.ConfigureForSelectedFloatingOle floatingOle
+        dialog.Show
+        Exit Sub
+    End If
+
+    MsgBox "Please select an existing picture or Figure Package OLE object in the Word document first.", vbExclamation
 End Sub
 
 Public Sub ShowUsageHelp()
-    MsgBox BuildUsageHelpText(), vbInformation, DecodeEscapedText("Figure Package \u4F7F\u7528\u8BF4\u660E")
+    UsageHelpDialog.ShowUsageText BuildUsageHelpText()
 End Sub
 
 Public Sub InsertPlotImageAsOle()
@@ -264,6 +282,192 @@ Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal 
     On Error GoTo 0
 End Sub
 
+Public Function ExtractZipFromInlineOleObject(ByVal targetInlineShape As Object) As String
+    If targetInlineShape Is Nothing Then
+        Err.Raise vbObjectError + 540, "ExtractZipFromInlineOleObject", "The selected OLE object is no longer available."
+    End If
+
+    ExtractZipFromInlineOleObject = ExtractZipFromOleOpenXml(CStr(targetInlineShape.Range.WordOpenXML), "selected_ole")
+End Function
+
+Public Function ExtractZipFromFloatingOleObject(ByRef targetShape As Object) As String
+    Dim convertedInline As InlineShape
+    Dim restoredShape As Shape
+    Dim zipPath As String
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim imageLeft As Single
+    Dim imageTop As Single
+    Dim relativeHorizontalPosition As Long
+    Dim relativeVerticalPosition As Long
+    Dim wrapType As Long
+    Dim layoutInCell As Long
+    Dim lockAnchor As Boolean
+
+    If targetShape Is Nothing Then
+        Err.Raise vbObjectError + 540, "ExtractZipFromFloatingOleObject", "The selected OLE object is no longer available."
+    End If
+
+    imageWidth = targetShape.Width
+    imageHeight = targetShape.Height
+    imageLeft = targetShape.Left
+    imageTop = targetShape.Top
+    relativeHorizontalPosition = targetShape.RelativeHorizontalPosition
+    relativeVerticalPosition = targetShape.RelativeVerticalPosition
+    wrapType = targetShape.WrapFormat.Type
+    layoutInCell = targetShape.LayoutInCell
+    lockAnchor = targetShape.LockAnchor
+
+    Set convertedInline = targetShape.ConvertToInlineShape
+    zipPath = ExtractZipFromOleOpenXml(CStr(convertedInline.Range.WordOpenXML), "selected_ole")
+    Set restoredShape = convertedInline.ConvertToShape
+    restoredShape.Width = imageWidth
+    restoredShape.Height = imageHeight
+    restoredShape.RelativeHorizontalPosition = relativeHorizontalPosition
+    restoredShape.RelativeVerticalPosition = relativeVerticalPosition
+    restoredShape.Left = imageLeft
+    restoredShape.Top = imageTop
+    restoredShape.WrapFormat.Type = wrapType
+    restoredShape.LayoutInCell = layoutInCell
+    restoredShape.LockAnchor = lockAnchor
+    Set targetShape = restoredShape
+
+    ExtractZipFromFloatingOleObject = zipPath
+End Function
+
+Public Function GetZipEntryNames(ByVal zipPath As String) As Collection
+    Dim entries As Collection
+    Dim fso As Object
+    Dim listPath As String
+    Dim wsh As Object
+    Dim command As String
+    Dim exitCode As Long
+    Dim fileNum As Integer
+    Dim lineText As String
+    Dim normalizedEntry As String
+
+    Set entries = New Collection
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FileExists(zipPath) Then
+        Err.Raise vbObjectError + 541, "GetZipEntryNames", "Zip file does not exist: " & zipPath
+    End If
+
+    listPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterZipList_" & Format$(Now, "yyyymmdd_hhnnss") & ".txt")
+    command = "cmd.exe /c tar.exe -tf " & QuoteForCommandLine(zipPath) & " > " & QuoteForCommandLine(listPath)
+    Set wsh = CreateObject("WScript.Shell")
+    exitCode = wsh.Run(command, 0, True)
+    If exitCode <> 0 Then
+        Err.Raise vbObjectError + 542, "GetZipEntryNames", "tar.exe failed to list zip entries with exit code " & exitCode
+    End If
+
+    If fso.FileExists(listPath) Then
+        fileNum = FreeFile
+        Open listPath For Input As #fileNum
+        Do While Not EOF(fileNum)
+            Line Input #fileNum, lineText
+            normalizedEntry = NormalizeZipEntryName(lineText)
+            If Len(normalizedEntry) > 0 Then entries.Add normalizedEntry
+        Loop
+        Close #fileNum
+        fso.DeleteFile listPath, True
+    End If
+
+    Set GetZipEntryNames = entries
+End Function
+
+Public Sub ManageFilesInInlineOle(ByVal targetInlineShape As Object, ByVal existingZipPath As String, ByVal keepEntryNames As Collection, ByVal newFiles As Collection)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim newZipPath As String
+    Dim targetRange As Range
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetInlineShape Is Nothing Then
+        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    imagePath = ExtractImageFromOpenXml(CStr(targetInlineShape.Range.WordOpenXML), "selected_ole_display")
+    newZipPath = BuildTempZipPathFromBase(fso, "managed_ole_support")
+    CreateZipFromManagedFiles existingZipPath, keepEntryNames, newFiles, newZipPath, fso.GetBaseName(newZipPath)
+
+    imageWidth = targetInlineShape.Width
+    imageHeight = targetInlineShape.Height
+    Set targetRange = targetInlineShape.Range.Duplicate
+    targetRange.Collapse wdCollapseStart
+
+    targetInlineShape.Delete
+    targetRange.Select
+    InsertImageZipAsOleWithSize imagePath, newZipPath, imageWidth, imageHeight
+End Sub
+
+Public Sub ManageFilesInFloatingOle(ByVal targetShape As Object, ByVal existingZipPath As String, ByVal keepEntryNames As Collection, ByVal newFiles As Collection)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim newZipPath As String
+    Dim anchorRange As Range
+    Dim convertedInline As InlineShape
+    Dim oleInline As InlineShape
+    Dim oleShape As Shape
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim imageLeft As Single
+    Dim imageTop As Single
+    Dim relativeHorizontalPosition As Long
+    Dim relativeVerticalPosition As Long
+    Dim wrapType As Long
+    Dim layoutInCell As Long
+    Dim lockAnchor As Boolean
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetShape Is Nothing Then
+        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    imageWidth = targetShape.Width
+    imageHeight = targetShape.Height
+    imageLeft = targetShape.Left
+    imageTop = targetShape.Top
+    relativeHorizontalPosition = targetShape.RelativeHorizontalPosition
+    relativeVerticalPosition = targetShape.RelativeVerticalPosition
+    wrapType = targetShape.WrapFormat.Type
+    layoutInCell = targetShape.LayoutInCell
+    lockAnchor = targetShape.LockAnchor
+
+    Set convertedInline = targetShape.ConvertToInlineShape
+    imagePath = ExtractImageFromOpenXml(CStr(convertedInline.Range.WordOpenXML), "selected_ole_display")
+    newZipPath = BuildTempZipPathFromBase(fso, "managed_ole_support")
+    CreateZipFromManagedFiles existingZipPath, keepEntryNames, newFiles, newZipPath, fso.GetBaseName(newZipPath)
+
+    Set anchorRange = convertedInline.Range.Duplicate
+    anchorRange.Collapse wdCollapseStart
+    convertedInline.Delete
+    anchorRange.Select
+    Set oleInline = AddImageZipOleInline(imagePath, newZipPath)
+    oleInline.Width = imageWidth
+    oleInline.Height = imageHeight
+
+    On Error Resume Next
+    Set oleShape = oleInline.ConvertToShape
+    If Not oleShape Is Nothing Then
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.RelativeHorizontalPosition = relativeHorizontalPosition
+        oleShape.RelativeVerticalPosition = relativeVerticalPosition
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
+        oleShape.WrapFormat.Type = wrapType
+        oleShape.LayoutInCell = layoutInCell
+        oleShape.LockAnchor = lockAnchor
+        oleShape.Fill.Visible = msoTrue
+        oleShape.Fill.UserPicture imagePath
+    End If
+    On Error GoTo 0
+End Sub
+
 Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supportFiles As Collection)
     Dim fso As Object
     Dim zipPath As String
@@ -384,6 +588,23 @@ Private Function NormalizeFolderPath(ByVal folderPath As String) As String
     NormalizeFolderPath = folderPath
 End Function
 
+Private Function NormalizeZipEntryName(ByVal entryName As String) As String
+    entryName = Trim$(Replace(entryName, "\", "/"))
+
+    Do While Left$(entryName, 2) = "./"
+        entryName = Mid$(entryName, 3)
+    Loop
+    Do While Left$(entryName, 1) = "/"
+        entryName = Mid$(entryName, 2)
+    Loop
+    Do While Right$(entryName, 1) = "/"
+        entryName = Left$(entryName, Len(entryName) - 1)
+    Loop
+
+    If entryName = "." Then entryName = vbNullString
+    NormalizeZipEntryName = entryName
+End Function
+
 Private Function BuildTempZipPath(ByVal fso As Object, ByVal folderPath As String) As String
     Dim baseName As String
 
@@ -439,6 +660,20 @@ Private Function TryGetSelectedInlineImage(ByRef inlineImage As InlineShape) As 
     TryGetSelectedInlineImage = Not inlineImage Is Nothing
 End Function
 
+Private Function TryGetSelectedInlineOlePackage(ByRef inlineOle As InlineShape) As Boolean
+    On Error Resume Next
+    If Selection.InlineShapes.Count > 0 Then
+        Set inlineOle = Selection.InlineShapes(1)
+    End If
+    On Error GoTo 0
+
+    If Not inlineOle Is Nothing Then
+        If Not IsInlineOlePackage(inlineOle) Then Set inlineOle = Nothing
+    End If
+
+    TryGetSelectedInlineOlePackage = Not inlineOle Is Nothing
+End Function
+
 Private Function TryGetSelectedFloatingImage(ByRef floatingImage As Shape) As Boolean
     On Error Resume Next
     If Selection.ShapeRange.Count > 0 Then
@@ -453,6 +688,20 @@ Private Function TryGetSelectedFloatingImage(ByRef floatingImage As Shape) As Bo
     TryGetSelectedFloatingImage = Not floatingImage Is Nothing
 End Function
 
+Private Function TryGetSelectedFloatingOlePackage(ByRef floatingOle As Shape) As Boolean
+    On Error Resume Next
+    If Selection.ShapeRange.Count > 0 Then
+        Set floatingOle = Selection.ShapeRange(1)
+    End If
+    On Error GoTo 0
+
+    If Not floatingOle Is Nothing Then
+        If Not IsFloatingOlePackage(floatingOle) Then Set floatingOle = Nothing
+    End If
+
+    TryGetSelectedFloatingOlePackage = Not floatingOle Is Nothing
+End Function
+
 Private Function IsInlinePictureShape(ByVal inlineImage As Object) As Boolean
     On Error Resume Next
     IsInlinePictureShape = (inlineImage.Type = wdInlineShapePicture Or inlineImage.Type = wdInlineShapeLinkedPicture)
@@ -463,6 +712,29 @@ Private Function IsFloatingPictureShape(ByVal floatingImage As Object) As Boolea
     On Error Resume Next
     IsFloatingPictureShape = (floatingImage.Type = msoPicture Or floatingImage.Type = msoLinkedPicture)
     On Error GoTo 0
+End Function
+
+Private Function IsInlineOlePackage(ByVal inlineOle As Object) As Boolean
+    On Error Resume Next
+    IsInlineOlePackage = (inlineOle.Type = wdInlineShapeEmbeddedOLEObject Or inlineOle.Type = wdInlineShapeLinkedOLEObject)
+    If IsInlineOlePackage Then
+        IsInlineOlePackage = HasOlePackageOpenXml(CStr(inlineOle.Range.WordOpenXML))
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function IsFloatingOlePackage(ByVal floatingOle As Object) As Boolean
+    On Error Resume Next
+    IsFloatingOlePackage = (floatingOle.Type = msoEmbeddedOLEObject Or floatingOle.Type = msoLinkedOLEObject)
+    If IsFloatingOlePackage Then
+        IsFloatingOlePackage = (LCase$(CStr(floatingOle.OLEFormat.ProgID)) = "package" Or LCase$(CStr(floatingOle.OLEFormat.ClassType)) = "package")
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function HasOlePackageOpenXml(ByVal openXml As String) As Boolean
+    HasOlePackageOpenXml = (InStr(1, openXml, "application/vnd.openxmlformats-officedocument.oleObject", vbTextCompare) > 0 _
+        And InStr(1, openXml, "Ole10Native", vbTextCompare) > 0)
 End Function
 
 Private Function BuildUsageHelpText() As String
@@ -483,12 +755,13 @@ Private Function BuildUsageHelpText() As String
         "4. \u5982\u679C\u9009\u9519\u4E86\uFF0C\u53EF\u4EE5\u7528 Remove selected \u6216 Clear \u8C03\u6574\u5217\u8868\u3002\n" & _
         "5. \u786E\u8BA4\u56FE\u7247\u548C\u652F\u6301\u6587\u4EF6\u5217\u8868\u65E0\u8BEF\u540E\uFF0C\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u652F\u6301\u6587\u4EF6\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
         "6. \u5982\u679C\u652F\u6301\u6587\u4EF6\u540C\u540D\uFF0Czip \u5185\u4F1A\u81EA\u52A8\u6539\u540D\uFF0C\u907F\u514D\u8986\u76D6\u3002\n\n" & _
-        "\u65B9\u5F0F\u4E09\uFF1A\u7ED9\u5DF2\u6709\u56FE\u7247\u6DFB\u52A0\u9644\u4EF6\n" & _
-        "1. \u5148\u5728 Word \u6587\u6863\u4E2D\u9009\u4E2D\u4E00\u5F20\u5DF2\u7ECF\u63D2\u5165\u7684\u56FE\u7247\u3002\n" & _
-        "2. \u70B9\u51FB Figure Package > Attach Files to Image\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
-        "3. \u6DFB\u52A0\u5E76\u786E\u8BA4\u652F\u6301\u6587\u4EF6\u540E\u70B9\u51FB Insert\u3002\n" & _
-        "4. \u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4ECD\u7136\u662F\u539F\u56FE\u7247\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n\n" & _
-        "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u65B0\u63D2\u5165\u56FE\u7247\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF0C\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\uFF1B\u7ED9\u5DF2\u6709\u56FE\u7247\u6DFB\u52A0\u9644\u4EF6\u65F6\u4FDD\u6301\u539F\u56FE\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002"
+        "\u65B9\u5F0F\u4E09\uFF1A\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u7684\u9644\u4EF6\n" & _
+        "1. \u5148\u5728 Word \u6587\u6863\u4E2D\u9009\u4E2D\u4E00\u5F20\u5DF2\u63D2\u5165\u7684\u56FE\u7247\uFF0C\u6216\u9009\u4E2D\u4E00\u4E2A\u5DF2\u6709\u7684 Figure Package OLE \u5BF9\u8C61\u3002\n" & _
+        "2. \u70B9\u51FB Figure Package > Manage Image/OLE Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
+        "3. \u5982\u679C\u9009\u4E2D\u7684\u662F\u666E\u901A\u56FE\u7247\uFF0C\u6DFB\u52A0\u652F\u6301\u6587\u4EF6\u540E\u70B9\u51FB Insert\uFF1B\u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n" & _
+        "4. \u5982\u679C\u9009\u4E2D\u7684\u662F\u5DF2\u6709 OLE \u5BF9\u8C61\uFF0C\u7A97\u53E3\u4F1A\u5217\u51FA\u73B0\u6709 zip \u4E2D\u7684\u6587\u4EF6\uFF1B\u5220\u9664 [embedded] \u6761\u76EE\u8868\u793A\u4ECE\u6700\u7EC8\u5305\u4E2D\u79FB\u9664\uFF0C\u6DFB\u52A0 [new] \u6761\u76EE\u8868\u793A\u65B0\u589E\u6587\u4EF6\u3002\n" & _
+        "5. \u786E\u8BA4\u5217\u8868\u540E\u70B9\u51FB Insert\uFF0C\u63D2\u4EF6\u4F1A\u91CD\u65B0\u751F\u6210 zip OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4FDD\u6301\u4E0D\u53D8\u3002\n\n" & _
+        "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u65B0\u63D2\u5165\u56FE\u7247\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF0C\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\uFF1B\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u65F6\u4FDD\u6301\u539F\u5BF9\u8C61\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002"
 
     BuildUsageHelpText = DecodeEscapedText(escaped)
 End Function
@@ -635,6 +908,425 @@ Private Sub WriteBase64ToFile(ByVal base64Text As String, ByVal outputPath As St
     stream.Close
 End Sub
 
+Private Function ExtractZipFromOleOpenXml(ByVal openXml As String, ByVal baseName As String) As String
+    Dim xmlDoc As Object
+    Dim oleParts As Object
+    Dim olePart As Object
+    Dim binaryNode As Object
+    Dim fso As Object
+    Dim olePath As String
+
+    Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
+    xmlDoc.async = False
+    xmlDoc.validateOnParse = False
+
+    If Not xmlDoc.LoadXML(openXml) Then
+        Err.Raise vbObjectError + 543, "ExtractZipFromOleOpenXml", "Could not read the selected OLE object XML."
+    End If
+
+    xmlDoc.setProperty "SelectionNamespaces", "xmlns:pkg='http://schemas.microsoft.com/office/2006/xmlPackage'"
+    Set oleParts = xmlDoc.SelectNodes("//pkg:part[@pkg:contentType='application/vnd.openxmlformats-officedocument.oleObject']")
+    If oleParts Is Nothing Then
+        Err.Raise vbObjectError + 544, "ExtractZipFromOleOpenXml", "Could not find embedded OLE data in the selected object."
+    End If
+    If oleParts.Length = 0 Then
+        Err.Raise vbObjectError + 544, "ExtractZipFromOleOpenXml", "Could not find embedded OLE data in the selected object."
+    End If
+
+    Set olePart = oleParts.Item(0)
+    Set binaryNode = olePart.SelectSingleNode("pkg:binaryData")
+    If binaryNode Is Nothing Then
+        Err.Raise vbObjectError + 545, "ExtractZipFromOleOpenXml", "Could not find embedded OLE bytes in the selected object."
+    End If
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    olePath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & ".bin")
+    WriteBase64ToFile CStr(binaryNode.Text), olePath
+    ExtractZipFromOleOpenXml = ExtractZipFromOlePackageFile(olePath, baseName)
+End Function
+
+Private Function ExtractZipFromOlePackageFile(ByVal olePath As String, ByVal baseName As String) As String
+    Dim fso As Object
+    Dim oleBytes() As Byte
+    Dim nativeBytes() As Byte
+    Dim zipStart As Long
+    Dim zipSize As Long
+    Dim zipPath As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    oleBytes = ReadBinaryFile(olePath)
+    nativeBytes = ExtractOle10NativeStream(oleBytes)
+    zipStart = FindZipStart(nativeBytes)
+    If zipStart < 0 Then
+        Err.Raise vbObjectError + 546, "ExtractZipFromOlePackageFile", "Could not find zip data inside the selected OLE object."
+    End If
+
+    If zipStart >= 4 Then
+        zipSize = ReadUInt32AsLong(nativeBytes, zipStart - 4)
+    End If
+    If zipSize <= 0 Or zipStart + zipSize > ByteArrayLength(nativeBytes) Then
+        zipSize = ByteArrayLength(nativeBytes) - zipStart
+    End If
+
+    zipPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & ".zip")
+    WriteByteRangeToFile nativeBytes, zipStart, zipSize, zipPath
+    ExtractZipFromOlePackageFile = zipPath
+End Function
+
+Private Function ExtractOle10NativeStream(ByRef oleBytes() As Byte) As Byte()
+    Dim sectorSize As Long
+    Dim miniSectorSize As Long
+    Dim numFatSectors As Long
+    Dim firstDirSector As Long
+    Dim miniStreamCutoff As Long
+    Dim firstMiniFatSector As Long
+    Dim fat() As Long
+    Dim miniFat() As Long
+    Dim dirBytes() As Byte
+    Dim rootStart As Long
+    Dim rootSize As Long
+    Dim nativeStart As Long
+    Dim nativeSize As Long
+    Dim rootStream() As Byte
+
+    If ByteArrayLength(oleBytes) < 512 Then
+        Err.Raise vbObjectError + 547, "ExtractOle10NativeStream", "The embedded OLE data is too small."
+    End If
+    If oleBytes(0) <> &HD0 Or oleBytes(1) <> &HCF Or oleBytes(2) <> &H11 Or oleBytes(3) <> &HE0 Then
+        Err.Raise vbObjectError + 548, "ExtractOle10NativeStream", "The embedded OLE data is not a compound file."
+    End If
+
+    sectorSize = 2 ^ ReadUInt16AsLong(oleBytes, 30)
+    miniSectorSize = 2 ^ ReadUInt16AsLong(oleBytes, 32)
+    numFatSectors = ReadUInt32AsLong(oleBytes, 44)
+    firstDirSector = ReadInt32LE(oleBytes, 48)
+    miniStreamCutoff = ReadUInt32AsLong(oleBytes, 56)
+    firstMiniFatSector = ReadInt32LE(oleBytes, 60)
+
+    fat = BuildFatTable(oleBytes, sectorSize, numFatSectors)
+    dirBytes = ReadRegularStreamBytes(oleBytes, fat, firstDirSector, sectorSize, -1)
+    FindOleDirectoryStreams dirBytes, rootStart, rootSize, nativeStart, nativeSize
+
+    If nativeSize < miniStreamCutoff Then
+        rootStream = ReadRegularStreamBytes(oleBytes, fat, rootStart, sectorSize, rootSize)
+        miniFat = BuildMiniFatTable(oleBytes, fat, firstMiniFatSector, sectorSize)
+        ExtractOle10NativeStream = ReadMiniStreamBytes(rootStream, miniFat, nativeStart, miniSectorSize, nativeSize)
+    Else
+        ExtractOle10NativeStream = ReadRegularStreamBytes(oleBytes, fat, nativeStart, sectorSize, nativeSize)
+    End If
+End Function
+
+Private Function BuildFatTable(ByRef oleBytes() As Byte, ByVal sectorSize As Long, ByVal numFatSectors As Long) As Long()
+    Dim fatSectorIds As Collection
+    Dim fat() As Long
+    Dim firstDifatSector As Long
+    Dim numDifatSectors As Long
+    Dim difatSector As Long
+    Dim i As Long
+    Dim j As Long
+    Dim pos As Long
+    Dim fatSectorId As Variant
+    Dim sectorBytes() As Byte
+    Dim nextDifatSector As Long
+
+    If numFatSectors <= 0 Then
+        Err.Raise vbObjectError + 549, "BuildFatTable", "The OLE compound file has no FAT sectors."
+    End If
+
+    Set fatSectorIds = New Collection
+    For i = 0 To 108
+        fatSectorId = ReadInt32LE(oleBytes, 76 + (i * 4))
+        If CLng(fatSectorId) >= 0 Then fatSectorIds.Add CLng(fatSectorId)
+    Next i
+
+    firstDifatSector = ReadInt32LE(oleBytes, 68)
+    numDifatSectors = ReadUInt32AsLong(oleBytes, 72)
+    difatSector = firstDifatSector
+    For i = 1 To numDifatSectors
+        If difatSector < 0 Then Exit For
+        sectorBytes = GetCfbSectorBytes(oleBytes, difatSector, sectorSize)
+        For j = 0 To 126
+            fatSectorId = ReadInt32LE(sectorBytes, j * 4)
+            If CLng(fatSectorId) >= 0 Then fatSectorIds.Add CLng(fatSectorId)
+        Next j
+        nextDifatSector = ReadInt32LE(sectorBytes, sectorSize - 4)
+        difatSector = nextDifatSector
+    Next i
+
+    If fatSectorIds.Count < numFatSectors Then
+        Err.Raise vbObjectError + 550, "BuildFatTable", "The OLE compound file FAT sector list is incomplete."
+    End If
+
+    ReDim fat(0 To (numFatSectors * (sectorSize \ 4)) - 1)
+    pos = 0
+    For i = 0 To numFatSectors - 1
+        sectorBytes = GetCfbSectorBytes(oleBytes, CLng(fatSectorIds(i + 1)), sectorSize)
+        For j = 0 To sectorSize - 4 Step 4
+            fat(pos) = ReadInt32LE(sectorBytes, j)
+            pos = pos + 1
+        Next j
+    Next i
+
+    BuildFatTable = fat
+End Function
+
+Private Function BuildMiniFatTable(ByRef oleBytes() As Byte, ByRef fat() As Long, ByVal firstMiniFatSector As Long, ByVal sectorSize As Long) As Long()
+    Dim miniFatBytes() As Byte
+    Dim miniFat() As Long
+    Dim i As Long
+
+    If firstMiniFatSector < 0 Then
+        ReDim miniFat(0 To 0)
+        BuildMiniFatTable = miniFat
+        Exit Function
+    End If
+
+    miniFatBytes = ReadRegularStreamBytes(oleBytes, fat, firstMiniFatSector, sectorSize, -1)
+    ReDim miniFat(0 To (ByteArrayLength(miniFatBytes) \ 4) - 1)
+    For i = 0 To UBound(miniFat)
+        miniFat(i) = ReadInt32LE(miniFatBytes, i * 4)
+    Next i
+
+    BuildMiniFatTable = miniFat
+End Function
+
+Private Function ReadRegularStreamBytes(ByRef oleBytes() As Byte, ByRef fat() As Long, ByVal startSector As Long, ByVal sectorSize As Long, ByVal streamSize As Long) As Byte()
+    Dim chain As Collection
+    Dim result() As Byte
+    Dim sectorId As Variant
+    Dim sectorBytes() As Byte
+    Dim pos As Long
+    Dim resultSize As Long
+
+    Set chain = GetFatSectorChain(fat, startSector)
+    If chain.Count = 0 Then
+        ReDim result(0 To 0)
+        ReadRegularStreamBytes = result
+        Exit Function
+    End If
+
+    resultSize = chain.Count * sectorSize
+    ReDim result(0 To resultSize - 1)
+    pos = 0
+    For Each sectorId In chain
+        sectorBytes = GetCfbSectorBytes(oleBytes, CLng(sectorId), sectorSize)
+        CopyBytes sectorBytes, 0, result, pos, sectorSize
+        pos = pos + sectorSize
+    Next sectorId
+
+    If streamSize >= 0 And streamSize < resultSize Then
+        ReDim Preserve result(0 To streamSize - 1)
+    End If
+    ReadRegularStreamBytes = result
+End Function
+
+Private Function ReadMiniStreamBytes(ByRef rootStream() As Byte, ByRef miniFat() As Long, ByVal startMiniSector As Long, ByVal miniSectorSize As Long, ByVal streamSize As Long) As Byte()
+    Dim chain As Collection
+    Dim result() As Byte
+    Dim miniSectorId As Variant
+    Dim pos As Long
+    Dim sourceOffset As Long
+    Dim resultSize As Long
+
+    Set chain = GetFatSectorChain(miniFat, startMiniSector)
+    If chain.Count = 0 Or streamSize <= 0 Then
+        ReDim result(0 To 0)
+        ReadMiniStreamBytes = result
+        Exit Function
+    End If
+
+    resultSize = chain.Count * miniSectorSize
+    ReDim result(0 To resultSize - 1)
+    pos = 0
+    For Each miniSectorId In chain
+        sourceOffset = CLng(miniSectorId) * miniSectorSize
+        CopyBytes rootStream, sourceOffset, result, pos, miniSectorSize
+        pos = pos + miniSectorSize
+    Next miniSectorId
+
+    If streamSize < resultSize Then
+        ReDim Preserve result(0 To streamSize - 1)
+    End If
+    ReadMiniStreamBytes = result
+End Function
+
+Private Function GetFatSectorChain(ByRef fat() As Long, ByVal startSector As Long) As Collection
+    Dim chain As Collection
+    Dim sectorId As Long
+    Dim guard As Long
+
+    Set chain = New Collection
+    sectorId = startSector
+    Do While sectorId >= 0 And sectorId <= UBound(fat)
+        chain.Add sectorId
+        sectorId = fat(sectorId)
+        guard = guard + 1
+        If sectorId = CFB_END_OF_CHAIN Or sectorId = CFB_FREE_SECTOR Then Exit Do
+        If guard > UBound(fat) + 1 Then
+            Err.Raise vbObjectError + 551, "GetFatSectorChain", "The OLE compound file has a circular sector chain."
+        End If
+    Loop
+
+    Set GetFatSectorChain = chain
+End Function
+
+Private Sub FindOleDirectoryStreams(ByRef dirBytes() As Byte, ByRef rootStart As Long, ByRef rootSize As Long, ByRef nativeStart As Long, ByRef nativeSize As Long)
+    Dim offset As Long
+    Dim entryName As String
+    Dim entryType As Long
+    Dim nameLength As Long
+    Dim foundNative As Boolean
+
+    For offset = 0 To ByteArrayLength(dirBytes) - 128 Step 128
+        nameLength = ReadUInt16AsLong(dirBytes, offset + 64)
+        entryType = CLng(dirBytes(offset + 66))
+        entryName = ReadUtf16String(dirBytes, offset, nameLength)
+
+        If offset = 0 Then
+            rootStart = ReadInt32LE(dirBytes, offset + 116)
+            rootSize = ReadUInt32AsLong(dirBytes, offset + 120)
+        End If
+
+        If entryType = 2 And InStr(1, entryName, "Ole10Native", vbTextCompare) > 0 Then
+            nativeStart = ReadInt32LE(dirBytes, offset + 116)
+            nativeSize = ReadUInt32AsLong(dirBytes, offset + 120)
+            foundNative = True
+        End If
+    Next offset
+
+    If Not foundNative Then
+        Err.Raise vbObjectError + 552, "FindOleDirectoryStreams", "The selected OLE object does not contain an Ole10Native package stream."
+    End If
+End Sub
+
+Private Function FindZipStart(ByRef bytes() As Byte) As Long
+    Dim i As Long
+
+    For i = 0 To ByteArrayLength(bytes) - 4
+        If bytes(i) = &H50 And bytes(i + 1) = &H4B Then
+            If (bytes(i + 2) = &H3 And bytes(i + 3) = &H4) Or (bytes(i + 2) = &H5 And bytes(i + 3) = &H6) Then
+                FindZipStart = i
+                Exit Function
+            End If
+        End If
+    Next i
+
+    FindZipStart = -1
+End Function
+
+Private Function GetCfbSectorBytes(ByRef bytes() As Byte, ByVal sectorId As Long, ByVal sectorSize As Long) As Byte()
+    Dim offset As Long
+
+    If sectorId < 0 Then
+        Err.Raise vbObjectError + 553, "GetCfbSectorBytes", "Invalid OLE sector id."
+    End If
+    offset = (sectorId + 1) * sectorSize
+    GetCfbSectorBytes = CopyByteRange(bytes, offset, sectorSize)
+End Function
+
+Private Function ReadBinaryFile(ByVal filePath As String) As Byte()
+    Dim stream As Object
+
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1
+    stream.Open
+    stream.LoadFromFile filePath
+    ReadBinaryFile = stream.Read
+    stream.Close
+End Function
+
+Private Sub WriteByteRangeToFile(ByRef bytes() As Byte, ByVal startOffset As Long, ByVal byteCount As Long, ByVal outputPath As String)
+    Dim stream As Object
+    Dim outputBytes() As Byte
+
+    outputBytes = CopyByteRange(bytes, startOffset, byteCount)
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1
+    stream.Open
+    stream.Write outputBytes
+    stream.SaveToFile outputPath, 2
+    stream.Close
+End Sub
+
+Private Function CopyByteRange(ByRef bytes() As Byte, ByVal startOffset As Long, ByVal byteCount As Long) As Byte()
+    Dim result() As Byte
+    Dim i As Long
+
+    If byteCount <= 0 Then
+        ReDim result(0 To 0)
+        CopyByteRange = result
+        Exit Function
+    End If
+
+    ReDim result(0 To byteCount - 1)
+    For i = 0 To byteCount - 1
+        result(i) = bytes(startOffset + i)
+    Next i
+    CopyByteRange = result
+End Function
+
+Private Sub CopyBytes(ByRef source() As Byte, ByVal sourceOffset As Long, ByRef destination() As Byte, ByVal destinationOffset As Long, ByVal byteCount As Long)
+    Dim i As Long
+
+    For i = 0 To byteCount - 1
+        destination(destinationOffset + i) = source(sourceOffset + i)
+    Next i
+End Sub
+
+Private Function ByteArrayLength(ByRef bytes() As Byte) As Long
+    On Error GoTo EmptyArray
+    ByteArrayLength = UBound(bytes) - LBound(bytes) + 1
+    Exit Function
+
+EmptyArray:
+    ByteArrayLength = 0
+End Function
+
+Private Function ReadUInt16AsLong(ByRef bytes() As Byte, ByVal offset As Long) As Long
+    ReadUInt16AsLong = CLng(bytes(offset)) + (CLng(bytes(offset + 1)) * 256&)
+End Function
+
+Private Function ReadUInt32AsLong(ByRef bytes() As Byte, ByVal offset As Long) As Long
+    Dim value As Double
+
+    value = CDbl(bytes(offset)) _
+        + (CDbl(bytes(offset + 1)) * 256#) _
+        + (CDbl(bytes(offset + 2)) * 65536#) _
+        + (CDbl(bytes(offset + 3)) * 16777216#)
+    If value > 2147483647# Then
+        Err.Raise vbObjectError + 554, "ReadUInt32AsLong", "OLE package value is too large."
+    End If
+    ReadUInt32AsLong = CLng(value)
+End Function
+
+Private Function ReadInt32LE(ByRef bytes() As Byte, ByVal offset As Long) As Long
+    Dim value As Double
+
+    value = CDbl(bytes(offset)) _
+        + (CDbl(bytes(offset + 1)) * 256#) _
+        + (CDbl(bytes(offset + 2)) * 65536#) _
+        + (CDbl(bytes(offset + 3)) * 16777216#)
+    If value >= 2147483648# Then value = value - 4294967296#
+    ReadInt32LE = CLng(value)
+End Function
+
+Private Function ReadUtf16String(ByRef bytes() As Byte, ByVal offset As Long, ByVal byteCount As Long) As String
+    Dim i As Long
+    Dim code As Long
+    Dim result As String
+
+    If byteCount <= 2 Then
+        ReadUtf16String = vbNullString
+        Exit Function
+    End If
+
+    For i = 0 To byteCount - 3 Step 2
+        code = CLng(bytes(offset + i)) + (CLng(bytes(offset + i + 1)) * 256&)
+        If code <> 0 Then result = result & UnicodeChar(code)
+    Next i
+    ReadUtf16String = result
+End Function
+
 Private Sub CreateZipFromSupportFiles(ByVal supportFiles As Collection, ByVal zipPath As String, ByVal baseName As String)
     Dim fso As Object
     Dim stagingFolder As String
@@ -662,6 +1354,163 @@ Failed:
     On Error GoTo 0
     Err.Raise errNumber, errSource, errDescription
 End Sub
+
+Private Sub CreateZipFromManagedFiles(ByVal existingZipPath As String, ByVal keepEntryNames As Collection, ByVal newFiles As Collection, ByVal zipPath As String, ByVal baseName As String)
+    Dim fso As Object
+    Dim stagingFolder As String
+    Dim errNumber As Long
+    Dim errSource As String
+    Dim errDescription As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    stagingFolder = BuildTempStagingFolderPath(fso, baseName)
+
+    On Error GoTo Failed
+    If Not fso.FileExists(existingZipPath) Then
+        Err.Raise vbObjectError + 555, "CreateZipFromManagedFiles", "Existing embedded zip file does not exist: " & existingZipPath
+    End If
+
+    DeleteFolderIfExists fso, stagingFolder
+    fso.CreateFolder stagingFolder
+    ExtractZipToFolder existingZipPath, stagingFolder
+    PruneStagedZipEntries fso, stagingFolder, keepEntryNames
+    StageAdditionalSupportFiles fso, newFiles, stagingFolder
+
+    If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
+    If FolderHasAnyFiles(fso.GetFolder(stagingFolder)) Then
+        CreateZipFromPath stagingFolder, zipPath, False
+    Else
+        CreateEmptyZip zipPath
+    End If
+
+    DeleteFolderIfExists fso, stagingFolder
+    Exit Sub
+
+Failed:
+    errNumber = Err.Number
+    errSource = Err.Source
+    errDescription = Err.Description
+    On Error Resume Next
+    DeleteFolderIfExists fso, stagingFolder
+    If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
+    On Error GoTo 0
+    Err.Raise errNumber, errSource, errDescription
+End Sub
+
+Private Sub ExtractZipToFolder(ByVal zipPath As String, ByVal targetFolder As String)
+    Dim wsh As Object
+    Dim command As String
+    Dim exitCode As Long
+
+    command = "cmd.exe /c tar.exe -xf " & QuoteForCommandLine(zipPath) & " -C " & QuoteForCommandLine(targetFolder)
+    Set wsh = CreateObject("WScript.Shell")
+    exitCode = wsh.Run(command, 0, True)
+    If exitCode <> 0 Then
+        Err.Raise vbObjectError + 556, "ExtractZipToFolder", "tar.exe failed to extract zip with exit code " & exitCode
+    End If
+End Sub
+
+Private Sub PruneStagedZipEntries(ByVal fso As Object, ByVal stagingFolder As String, ByVal keepEntryNames As Collection)
+    Dim keepSet As Object
+
+    Set keepSet = CreateObject("Scripting.Dictionary")
+    AddKeepEntries keepSet, keepEntryNames
+    PruneFilesInFolder fso, fso.GetFolder(stagingFolder), stagingFolder, keepSet
+    DeleteEmptySubfolders fso.GetFolder(stagingFolder)
+End Sub
+
+Private Sub AddKeepEntries(ByVal keepSet As Object, ByVal keepEntryNames As Collection)
+    Dim entryName As Variant
+    Dim normalizedEntry As String
+
+    If keepEntryNames Is Nothing Then Exit Sub
+    For Each entryName In keepEntryNames
+        normalizedEntry = NormalizeZipEntryName(CStr(entryName))
+        If Len(normalizedEntry) > 0 Then keepSet(LCase$(normalizedEntry)) = True
+    Next entryName
+End Sub
+
+Private Sub PruneFilesInFolder(ByVal fso As Object, ByVal folder As Object, ByVal rootFolderPath As String, ByVal keepSet As Object)
+    Dim fileItem As Object
+    Dim subFolder As Object
+    Dim relativeName As String
+
+    For Each fileItem In folder.Files
+        relativeName = GetRelativeZipEntryName(rootFolderPath, CStr(fileItem.Path))
+        If Not keepSet.Exists(LCase$(relativeName)) Then
+            fso.DeleteFile CStr(fileItem.Path), True
+        End If
+    Next fileItem
+
+    For Each subFolder In folder.SubFolders
+        PruneFilesInFolder fso, subFolder, rootFolderPath, keepSet
+    Next subFolder
+End Sub
+
+Private Sub StageAdditionalSupportFiles(ByVal fso As Object, ByVal supportFiles As Collection, ByVal stagingFolder As String)
+    Dim usedNames As Object
+    Dim existingFile As Object
+    Dim filePath As Variant
+    Dim targetName As String
+
+    If supportFiles Is Nothing Then Exit Sub
+
+    Set usedNames = CreateObject("Scripting.Dictionary")
+    For Each existingFile In fso.GetFolder(stagingFolder).Files
+        usedNames(LCase$(CStr(existingFile.Name))) = True
+    Next existingFile
+
+    For Each filePath In supportFiles
+        If Not fso.FileExists(CStr(filePath)) Then
+            Err.Raise vbObjectError + 522, "StageAdditionalSupportFiles", "Support file does not exist: " & CStr(filePath)
+        End If
+
+        targetName = GetUniqueStagedFileName(fso, usedNames, fso.GetFileName(CStr(filePath)))
+        fso.CopyFile CStr(filePath), fso.BuildPath(stagingFolder, targetName), True
+    Next filePath
+End Sub
+
+Private Function FolderHasAnyFiles(ByVal folder As Object) As Boolean
+    Dim subFolder As Object
+
+    If folder.Files.Count > 0 Then
+        FolderHasAnyFiles = True
+        Exit Function
+    End If
+
+    For Each subFolder In folder.SubFolders
+        If FolderHasAnyFiles(subFolder) Then
+            FolderHasAnyFiles = True
+            Exit Function
+        End If
+    Next subFolder
+End Function
+
+Private Sub DeleteEmptySubfolders(ByVal folder As Object)
+    Dim subFolder As Object
+    Dim subFoldersToCheck As Collection
+    Dim item As Variant
+
+    Set subFoldersToCheck = New Collection
+    For Each subFolder In folder.SubFolders
+        subFoldersToCheck.Add subFolder
+    Next subFolder
+
+    For Each item In subFoldersToCheck
+        DeleteEmptySubfolders item
+        If item.Files.Count = 0 And item.SubFolders.Count = 0 Then item.Delete True
+    Next item
+End Sub
+
+Private Function GetRelativeZipEntryName(ByVal rootFolderPath As String, ByVal filePath As String) As String
+    Dim rootWithSlash As String
+    Dim relativePath As String
+
+    rootWithSlash = rootFolderPath
+    If Right$(rootWithSlash, 1) <> "\" Then rootWithSlash = rootWithSlash & "\"
+    relativePath = Mid$(filePath, Len(rootWithSlash) + 1)
+    GetRelativeZipEntryName = NormalizeZipEntryName(Replace(relativePath, "\", "/"))
+End Function
 
 Private Function BuildTempStagingFolderPath(ByVal fso As Object, ByVal baseName As String) As String
     Dim stamp As String

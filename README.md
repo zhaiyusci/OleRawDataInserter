@@ -34,14 +34,14 @@ OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
 6. 插件会把这些支持文件打包成 zip，并作为 OLE 对象嵌入当前 Word 文档；文档中显示的是第一步选择的图片。
 7. 如果多选的支持文件有同名文件，zip 内会自动改名为 `name_2.ext` 这类形式，避免覆盖。
 
-### 工作流三：给已有图片添加附件
+### 工作流三：管理已有图片或 OLE 图包的附件
 
-1. 先在 Word 文档中选中一张已经插入的图片。
-2. 在 `Figure Package` 选项卡中点击 `Attach Files to Image`，打开确认窗口。
-3. 点击 `Add files...` 多选需要嵌入的支持文件，文件类型不限；窗口中会列出已选择的文件。
-4. 如果选错了，可以用 `Remove selected` 或 `Clear` 调整支持文件列表。
-5. 确认支持文件列表无误后，点击 `Insert`。
-6. 插件会把原图片替换成一个 zip OLE 对象；Word 中显示出来仍然是原图片，并保持原来的大小和位置。
+1. 在 Word 文档中选中一张已经插入的图片，或选中一个已有的 Figure Package OLE 对象。
+2. 在 `Figure Package` 选项卡中点击 `Manage Image/OLE Files`，打开确认窗口。
+3. 如果选中的是普通图片，窗口会从空列表开始；点击 `Add files...` 多选需要嵌入的支持文件，然后点击 `Insert`，插件会把原图片替换成 zip OLE 对象，并保持原来的大小和位置。
+4. 如果选中的是已有 OLE 对象，窗口会列出当前 zip 中已有的文件，显示为 `[embedded] filename`。
+5. 要删除已有附件，选中对应 `[embedded]` 条目并点击 `Remove selected`；要新增附件，点击 `Add files...`，新增条目会显示为 `[new] full\path`。
+6. 确认列表无误后点击 `Insert`。插件会按当前列表重新生成 zip OLE 对象；Word 中显示出来仍然是原来的图，并保持原来的大小和位置。
 
 卸载方式：
 
@@ -75,24 +75,25 @@ Windows Settings -> Installed apps -> Figure Package Word Add-in -> Uninstall
 - 支持文件进入 zip 根目录，不额外套一层父文件夹。
 - 同名支持文件会自动改名，避免互相覆盖。
 
-`Attach Files to Image` 使用文档中已经选中的图片和一组多选支持文件。
+`Manage Image/OLE Files` 使用文档中已经选中的图片或 Figure Package OLE 对象。
 
 压缩包内容规则：
 
-- 只包含用户多选的支持文件。
+- 选中普通图片时，新 zip 只包含用户多选的支持文件。
+- 选中已有 OLE 对象时，新 zip 包含列表中保留的 `[embedded]` 文件和新增的 `[new]` 文件。
 - 支持文件类型不限。
 - 支持文件进入 zip 根目录，不额外套一层父文件夹。
-- 同名支持文件会自动改名，避免互相覆盖。
-- 显示外观来自文档中原本选中的图片，不需要另选图片文件。
+- 同名新增文件会自动改名，避免互相覆盖。
+- 显示外观来自文档中原本选中的图片或 OLE 对象，不需要另选图片文件。
 
 OLE 外观规则：
 
 - 嵌入对象本体是 zip。
-- Word 中显示为所选图片：plot 文件夹模式显示 `plot.png`，图片 + 支持文件模式显示用户选择的图片，给已有图片添加附件时显示原本选中的图片。
+- Word 中显示为所选图片：plot 文件夹模式显示 `plot.png`，图片 + 支持文件模式显示用户选择的图片，管理已有图片或 OLE 图包时显示原本选中的图。
 - 始终保持显示图片的高宽比。
 - 新插入图片时，如果显示图片的印刷尺寸小于版心，保持原始印刷尺寸。
 - 新插入图片时，如果显示图片的印刷尺寸超过版心，等比缩小到能放进版心。
-- 给已有图片添加附件时，保持原图片在文档中的大小和位置。
+- 管理已有图片或 OLE 图包时，保持原对象在文档中的大小和位置。
 - 不显示 zip 文件名。
 - 使用透明 icon 避免出现默认文件图标。
 
@@ -102,7 +103,10 @@ OLE 外观规则：
 OleRawDataInserter/
   LICENSE
   assets/
-    figure-package-icon.png
+    insert-figure-package-icon.png
+    insert-image-files-icon.png
+    manage-image-ole-files-icon.png
+    usage-help-icon.png
   customUI/
     customUI14.xml
   dist/
@@ -117,6 +121,8 @@ OleRawDataInserter/
     ImageSupportFilesDialog.frx
     RawDataOleInserter.bas
     RibbonCallbacks.bas
+    UsageHelpDialog.frm
+    UsageHelpDialog.frx
   test/
     run-word-smoke-test-with-temp-vbom.ps1
     sample-plot/

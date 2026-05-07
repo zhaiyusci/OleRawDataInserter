@@ -33,7 +33,14 @@ src\ImageSupportFilesDialog.frm
 src\ImageSupportFilesDialog.frx
 ```
 
-注意：`.frm` 和 `.frx` 必须成对保留。VBE 导入 UserForm 时会读取 `.frm` 中的 `OleObjectBlob` 并加载同名 `.frx`；如果只有手写 `.frm` 而没有 `.frx`，Word 可能把它导入成普通模块，随后在 `.Show` 处编译/运行失败。
+Usage 滚动说明窗口：
+
+```text
+src\UsageHelpDialog.frm
+src\UsageHelpDialog.frx
+```
+
+注意：UserForm 的 `.frm` 和 `.frx` 必须成对保留。VBE 导入 UserForm 时会读取 `.frm` 中的 `OleObjectBlob` 并加载同名 `.frx`；如果只有手写 `.frm` 而没有 `.frx`，Word 可能把它导入成普通模块，随后在 `.Show` 处编译/运行失败。
 
 Ribbon 回调：
 
@@ -51,13 +58,22 @@ customUI\customUI14.xml
 
 - `Insert Figure Package`：选择包含 `plot.png` 的图目录并插入 OLE 图包。
 - `Insert Image + Files`：打开确认窗口；用户可以在窗口中选择/查看显示图片和支持文件列表，最后点击 `Insert` 提交。
-- `Attach Files to Image`：选择文档中已有图片后打开确认窗口；用户多选支持文件后，插件把原图片替换成显示外观相同的 zip OLE 对象，并保持原来的大小和位置。
-- `Usage`：弹出终端用户使用说明。
+- `Manage Image/OLE Files`：选择文档中已有图片或 Figure Package OLE 对象后打开确认窗口；普通图片会被替换成显示外观相同的 zip OLE 对象，已有 OLE 对象会列出现有 zip 条目并允许添加/删除文件；两种模式都会保持原来的显示外观、大小和位置。
+- `Usage`：打开带垂直滚动条的终端用户使用说明窗口。
 
 Ribbon 图标：
 
 ```text
-assets\figure-package-icon.png
+assets\insert-figure-package-icon.png
+assets\insert-image-files-icon.png
+assets\manage-image-ole-files-icon.png
+assets\usage-help-icon.png
+```
+
+图标由脚本生成：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File OleRawDataInserter\tools\generate-ribbon-icons.ps1
 ```
 
 Inno Setup 安装器脚本：
@@ -110,6 +126,8 @@ src\RawDataOleInserter.bas
 src\RibbonCallbacks.bas
 src\ImageSupportFilesDialog.frm
 src\ImageSupportFilesDialog.frx
+src\UsageHelpDialog.frm
+src\UsageHelpDialog.frx
 ```
 
 输出文件在：
@@ -137,7 +155,10 @@ powershell -ExecutionPolicy Bypass -File OleRawDataInserter\tools\inject-ribbon.
 ```text
 customUI/customUI14.xml
 customUI/_rels/customUI14.xml.rels
-customUI/images/figure-package-icon.png
+customUI/images/insert-figure-package-icon.png
+customUI/images/insert-image-files-icon.png
+customUI/images/manage-image-ole-files-icon.png
+customUI/images/usage-help-icon.png
 ```
 
 ### 3. 编译安装器
@@ -258,7 +279,9 @@ tar.exe -a -cf output.zip --exclude=./plot.png --exclude=./plot.svg --exclude=./
 - staging 文件夹再通过 `CreateZipFromPath(..., False)` 打包；这个模式不会排除 `plot.png`、`plot.svg`、`plot.pdf`。
 - zip 创建完成后会删除 staging 文件夹。
 
-`Attach Files to Image` 复用同一套 `CreateZipFromSupportFiles` 多文件打包逻辑。它不会把原图文件放进 zip；原图只作为 OLE 对象的显示外观，zip 里只包含用户选择的支持文件。
+`Manage Image/OLE Files` 对普通图片复用 `CreateZipFromSupportFiles` 多文件打包逻辑。它不会把原图文件放进 zip；原图只作为 OLE 对象的显示外观，zip 里只包含用户选择的支持文件。
+
+对已有 OLE 对象，管理逻辑会从 `Range.WordOpenXML` 中取出 `/word/embeddings/oleObject*.bin`，解析 OLE Compound File 中的 `Ole10Native` stream，抽出原 zip。确认窗口里 `[embedded]` 条目表示旧 zip 中保留的文件，`[new]` 条目表示用户新选的本地文件。提交时会解包旧 zip、删除未保留的条目、复制新增文件、重新打包，并用原显示图替换回新的 zip OLE 对象。
 
 ## 图片尺寸实现说明
 
@@ -270,7 +293,10 @@ FitSizeToTextArea
 GetCurrentTextAreaSize
 AttachSupportFilesToInlineImage
 AttachSupportFilesToFloatingImage
+ManageFilesInInlineOle
+ManageFilesInFloatingOle
 ExtractImageFromOpenXml
+ExtractZipFromOleOpenXml
 ```
 
 规则：
@@ -281,8 +307,8 @@ ExtractImageFromOpenXml
 - 如果图片原始印刷尺寸能放进版心，则不放大，保持原始印刷尺寸。
 - 如果图片超过版心，则按宽度比例和高度比例中较小的那个等比缩小。
 - 插件会同时设置宽度和高度，缩放比例相同，因此高宽比保持不变。
-- 给已有行内图片添加附件时，先从该图片的 `Range.WordOpenXML` 提取显示图像，再删除原图片并在同一位置插入 OLE 对象，最后恢复原来的 `Width` 和 `Height`。
-- 给已有浮动图片添加附件时，先记录 `Width`、`Height`、`Left`、`Top`、相对定位和环绕方式；随后临时转换为行内图片以提取当前选中图片本身，再插入 OLE、转换回浮动 Shape，并恢复这些位置/布局属性。
+- 给已有行内图片或行内 OLE 管理附件时，先从该对象的 `Range.WordOpenXML` 提取显示图像，再删除原对象并在同一位置插入新的 OLE 对象，最后恢复原来的 `Width` 和 `Height`。
+- 给已有浮动图片或浮动 OLE 管理附件时，先记录 `Width`、`Height`、`Left`、`Top`、相对定位和环绕方式；随后临时转换为行内对象以提取当前选中对象本身，再插入 OLE、转换回浮动 Shape，并恢复这些位置/布局属性。
 
 ## 发布给用户
 
@@ -299,7 +325,7 @@ release\FigurePackageWordAddinSetup.exe
 1. 关闭 Word。
 2. 双击安装器。
 3. 重新打开 Word。
-4. 在 `Figure Package` 选项卡点击 `Insert Figure Package`、`Insert Image + Files`，或先选中已有图片再点击 `Attach Files to Image`。
+4. 在 `Figure Package` 选项卡点击 `Insert Figure Package`、`Insert Image + Files`，或先选中已有图片/OLE 对象再点击 `Manage Image/OLE Files`。
 
 ## 卸载
 

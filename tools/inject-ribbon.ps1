@@ -13,14 +13,20 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
 }
 
 $customUiPath = Join-Path $ProjectRoot 'customUI\customUI14.xml'
-$customIconPath = Join-Path $ProjectRoot 'assets\figure-package-icon.png'
 $resolvedDotm = (Resolve-Path $DotmPath).Path
+$customIcons = @(
+    @{ Id = 'InsertFigurePackageIcon'; File = 'insert-figure-package-icon.png' },
+    @{ Id = 'InsertImageFilesIcon'; File = 'insert-image-files-icon.png' },
+    @{ Id = 'ManageImageOleFilesIcon'; File = 'manage-image-ole-files-icon.png' },
+    @{ Id = 'UsageHelpIcon'; File = 'usage-help-icon.png' }
+)
 
 function Add-CustomUiToWordPackage {
     param(
         [string]$PackagePath,
         [string]$CustomUiPath,
-        [string]$CustomIconPath
+        [array]$CustomIcons,
+        [string]$ProjectRoot
     )
 
     Add-Type -AssemblyName System.IO.Compression
@@ -30,14 +36,14 @@ function Add-CustomUiToWordPackage {
     try {
         foreach ($entryName in @(
             'customUI/customUI14.xml',
-            'customUI/_rels/customUI14.xml.rels',
-            'customUI/images/figure-package-icon.png'
+            'customUI/_rels/customUI14.xml.rels'
         )) {
             $existingEntry = $zip.GetEntry($entryName)
             if ($null -ne $existingEntry) {
                 $existingEntry.Delete()
             }
         }
+        @($zip.Entries | Where-Object { $_.FullName -like 'customUI/images/*' }) | ForEach-Object { $_.Delete() }
 
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
             $zip,
@@ -45,15 +51,26 @@ function Add-CustomUiToWordPackage {
             'customUI/customUI14.xml'
         ) | Out-Null
 
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            $zip,
-            $CustomIconPath,
-            'customUI/images/figure-package-icon.png'
-        ) | Out-Null
+        foreach ($icon in $CustomIcons) {
+            $iconPath = Join-Path (Join-Path $ProjectRoot 'assets') $icon.File
+            if (-not (Test-Path -LiteralPath $iconPath)) {
+                throw "Missing Ribbon icon: $iconPath"
+            }
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip,
+                $iconPath,
+                "customUI/images/$($icon.File)"
+            ) | Out-Null
+        }
 
         $customUiRelsEntry = $zip.CreateEntry('customUI/_rels/customUI14.xml.rels')
         $customUiRelsWriter = New-Object System.IO.StreamWriter($customUiRelsEntry.Open())
-        $customUiRelsWriter.Write('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="FigurePackageIcon" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="images/figure-package-icon.png"/></Relationships>')
+        $relationships = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        foreach ($icon in $CustomIcons) {
+            $relationships += "<Relationship Id=""$($icon.Id)"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"" Target=""images/$($icon.File)""/>"
+        }
+        $relationships += '</Relationships>'
+        $customUiRelsWriter.Write($relationships)
         $customUiRelsWriter.Close()
 
         $relsEntry = $zip.GetEntry('_rels/.rels')
@@ -106,5 +123,5 @@ function Add-CustomUiToWordPackage {
     }
 }
 
-Add-CustomUiToWordPackage -PackagePath $resolvedDotm -CustomUiPath $customUiPath -CustomIconPath $customIconPath
+Add-CustomUiToWordPackage -PackagePath $resolvedDotm -CustomUiPath $customUiPath -CustomIcons $customIcons -ProjectRoot $ProjectRoot
 "Injected Ribbon customUI into: $resolvedDotm"

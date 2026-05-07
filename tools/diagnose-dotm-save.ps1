@@ -35,6 +35,7 @@ function Test-SaveDotm {
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'UsageHelpDialog.frm')) | Out-Null
         }
 
         "Calling SaveAs2"

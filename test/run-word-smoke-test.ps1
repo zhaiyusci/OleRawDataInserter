@@ -8,6 +8,7 @@ $sampleDir = Join-Path $ProjectRoot 'test\sample-plot'
 $supportDir = Join-Path $sampleDir 'support-extra'
 $modulePath = Join-Path $ProjectRoot 'src\RawDataOleInserter.bas'
 $dialogPath = Join-Path $ProjectRoot 'src\ImageSupportFilesDialog.frm'
+$usageDialogPath = Join-Path $ProjectRoot 'src\UsageHelpDialog.frm'
 $logPath = Join-Path $ProjectRoot 'test\word-smoke-test.log'
 
 function Write-Step {
@@ -43,6 +44,7 @@ $bitmap.Dispose()
 
 Set-Content -LiteralPath (Join-Path $sampleDir 'plot.py') -Encoding UTF8 -Value "print('sample plot source')"
 Set-Content -LiteralPath (Join-Path $sampleDir 'data.csv') -Encoding UTF8 -Value "x,y`n1,2`n2,4"
+Set-Content -LiteralPath (Join-Path $sampleDir 'notes.txt') -Encoding UTF8 -Value "managed OLE support note"
 Set-Content -LiteralPath (Join-Path $supportDir 'data.csv') -Encoding UTF8 -Value "x,y`n3,9`n4,16"
 
 $word = $null
@@ -61,6 +63,8 @@ try {
     $doc.VBProject.VBComponents.Import($modulePath) | Out-Null
     Write-Step 'Importing support-files dialog'
     $doc.VBProject.VBComponents.Import($dialogPath) | Out-Null
+    Write-Step 'Importing usage help dialog'
+    $doc.VBProject.VBComponents.Import($usageDialogPath) | Out-Null
     Write-Step 'Adding smoke-test runner macro'
     $runner = $doc.VBProject.VBComponents.Add(1)
     $escapedSampleDir = $sampleDir.Replace('"', '""')
@@ -68,16 +72,30 @@ try {
     $escapedDataPath = (Join-Path $sampleDir 'data.csv').Replace('"', '""')
     $escapedDuplicateDataPath = (Join-Path $supportDir 'data.csv').Replace('"', '""')
     $escapedPlotPyPath = (Join-Path $sampleDir 'plot.py').Replace('"', '""')
+    $escapedNotesPath = (Join-Path $sampleDir 'notes.txt').Replace('"', '""')
     $escapedLogPath = $logPath.Replace('"', '""')
     $runner.CodeModule.AddFromString(@"
 Public Sub SmokeTest()
     Dim supportFiles As Collection
+    Dim keepEntries As Collection
+    Dim managedZipPath As String
+    Dim managedEntries As Collection
     Dim existingPicture As InlineShape
     Dim existingFloatingPicture As Shape
     Dim floatingAnchor As Range
 
     On Error GoTo Failed
     InsertPlotFolder "$escapedSampleDir"
+    Set keepEntries = New Collection
+    keepEntries.Add "plot.py"
+    Set supportFiles = New Collection
+    supportFiles.Add "$escapedNotesPath"
+    ManageFilesInInlineOle ActiveDocument.InlineShapes.Item(1), ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(1)), keepEntries, supportFiles
+    managedZipPath = ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(1))
+    Set managedEntries = GetZipEntryNames(managedZipPath)
+    If Not CollectionContainsText(managedEntries, "plot.py") Then Err.Raise vbObjectError + 900, "SmokeTest", "Managed OLE zip lost plot.py"
+    If Not CollectionContainsText(managedEntries, "notes.txt") Then Err.Raise vbObjectError + 901, "SmokeTest", "Managed OLE zip did not add notes.txt"
+    If CollectionContainsText(managedEntries, "data.csv") Then Err.Raise vbObjectError + 902, "SmokeTest", "Managed OLE zip did not remove data.csv"
     Set supportFiles = New Collection
     supportFiles.Add "$escapedDataPath"
     supportFiles.Add "$escapedDuplicateDataPath"
@@ -109,10 +127,26 @@ Failed:
     Print #1, Format`$(Now, "yyyy-mm-dd hh:nn:ss") & " VBA SmokeTest ERROR " & Err.Number & ": " & Err.Description
     Close #1
 End Sub
+
+Private Function CollectionContainsText(ByVal values As Collection, ByVal expected As String) As Boolean
+    Dim value As Variant
+
+    For Each value In values
+        If LCase`$(CStr(value)) = LCase`$(expected) Then
+            CollectionContainsText = True
+            Exit Function
+        End If
+    Next value
+End Function
 "@)
 
     Write-Step 'Running InsertPlotFolder macro'
     $word.Run('SmokeTest')
+
+    $logContent = Get-Content -LiteralPath $logPath -Encoding UTF8 -Raw
+    if ($logContent -match 'VBA SmokeTest ERROR') {
+        throw ($logContent -split "`r?`n" | Where-Object { $_ -match 'VBA SmokeTest ERROR' } | Select-Object -Last 1)
+    }
 
     Write-Step 'Macro returned; checking document'
     $shapeCount = $doc.InlineShapes.Count
@@ -157,4 +191,5 @@ finally {
     if ($word -ne $null) {
         $word.Quit()
     }
+    Remove-Item -LiteralPath (Join-Path $sampleDir 'notes.txt') -Force -ErrorAction SilentlyContinue
 }

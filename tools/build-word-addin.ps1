@@ -8,6 +8,12 @@ $ErrorActionPreference = 'Stop'
 
 $srcDir = Join-Path $ProjectRoot 'src'
 $customUiPath = Join-Path $ProjectRoot 'customUI\customUI14.xml'
+$customIcons = @(
+    @{ Id = 'InsertFigurePackageIcon'; File = 'insert-figure-package-icon.png' },
+    @{ Id = 'InsertImageFilesIcon'; File = 'insert-image-files-icon.png' },
+    @{ Id = 'ManageImageOleFilesIcon'; File = 'manage-image-ole-files-icon.png' },
+    @{ Id = 'UsageHelpIcon'; File = 'usage-help-icon.png' }
+)
 $distDir = Join-Path $ProjectRoot 'dist'
 $addinPath = Join-Path $distDir 'OleRawDataInserter.dotm'
 $tempBuildDir = Join-Path $env:TEMP 'OleRawDataInserterBuild'
@@ -71,7 +77,8 @@ function Restore-VbomAccess {
 function Add-CustomUiToWordPackage {
     param(
         [string]$PackagePath,
-        [string]$CustomUiPath
+        [string]$CustomUiPath,
+        [array]$CustomIcons
     )
 
     Add-Type -AssemblyName System.IO.Compression
@@ -79,18 +86,41 @@ function Add-CustomUiToWordPackage {
 
     $zip = [System.IO.Compression.ZipFile]::Open($PackagePath, [System.IO.Compression.ZipArchiveMode]::Update)
     try {
-        foreach ($entryName in @('customUI/customUI14.xml')) {
+        foreach ($entryName in @('customUI/customUI14.xml', 'customUI/_rels/customUI14.xml.rels')) {
             $existing = $zip.GetEntry($entryName)
             if ($null -ne $existing) {
                 $existing.Delete()
             }
         }
+        @($zip.Entries | Where-Object { $_.FullName -like 'customUI/images/*' }) | ForEach-Object { $_.Delete() }
 
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
             $zip,
             $CustomUiPath,
             'customUI/customUI14.xml'
         ) | Out-Null
+
+        foreach ($icon in $CustomIcons) {
+            $iconPath = Join-Path (Join-Path $ProjectRoot 'assets') $icon.File
+            if (-not (Test-Path -LiteralPath $iconPath)) {
+                throw "Missing Ribbon icon: $iconPath"
+            }
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip,
+                $iconPath,
+                "customUI/images/$($icon.File)"
+            ) | Out-Null
+        }
+
+        $customUiRelsEntry = $zip.CreateEntry('customUI/_rels/customUI14.xml.rels')
+        $customUiRelsWriter = New-Object System.IO.StreamWriter($customUiRelsEntry.Open())
+        $relationships = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        foreach ($icon in $CustomIcons) {
+            $relationships += "<Relationship Id=""$($icon.Id)"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"" Target=""images/$($icon.File)""/>"
+        }
+        $relationships += '</Relationships>'
+        $customUiRelsWriter.Write($relationships)
+        $customUiRelsWriter.Close()
 
         $relsEntry = $zip.GetEntry('_rels/.rels')
         $relsReader = New-Object System.IO.StreamReader($relsEntry.Open())
@@ -113,6 +143,11 @@ function Add-CustomUiToWordPackage {
         $contentTypesXml = $ctReader.ReadToEnd()
         $ctReader.Close()
         $contentTypesEntry.Delete()
+
+        if ($contentTypesXml -notmatch 'Extension="png"') {
+            $pngDefault = '<Default Extension="png" ContentType="image/png"/>'
+            $contentTypesXml = $contentTypesXml -replace '</Types>', "$pngDefault</Types>"
+        }
 
         if ($contentTypesXml -notmatch '/customUI/customUI14.xml') {
             $override = '<Override PartName="/customUI/customUI14.xml" ContentType="application/xml"/>'
@@ -164,13 +199,15 @@ try {
     $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
     Write-Step 'Importing ImageSupportFilesDialog.frm'
     $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null
+    Write-Step 'Importing UsageHelpDialog.frm'
+    $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'UsageHelpDialog.frm')) | Out-Null
     Write-Step "Saving dotm to temporary ASCII path: $tempAddinPath"
     $doc.SaveAs2($tempAddinPath, 15)
     $doc.Close($false)
     $doc = $null
 
     Write-Step 'Injecting Ribbon customUI'
-    Add-CustomUiToWordPackage -PackagePath $tempAddinPath -CustomUiPath $customUiPath
+    Add-CustomUiToWordPackage -PackagePath $tempAddinPath -CustomUiPath $customUiPath -CustomIcons $customIcons
 
     Write-Step "Copying built add-in to dist: $addinPath"
     Copy-Item -LiteralPath $tempAddinPath -Destination $addinPath -Force
