@@ -82,6 +82,7 @@ Public Sub SmokeTest()
     Dim managedZipPath As String
     Dim managedEntries As Collection
     Dim existingPicture As InlineShape
+    Dim linkedPicture As InlineShape
     Dim existingFloatingPicture As Shape
     Dim floatingAnchor As Range
 
@@ -111,6 +112,13 @@ Public Sub SmokeTest()
     supportFiles.Add "$escapedDataPath"
     supportFiles.Add "$escapedDuplicateDataPath"
     AttachSupportFilesToInlineImage existingPicture, supportFiles
+    Selection.EndKey Unit:=wdStory
+    Set linkedPicture = Selection.InlineShapes.AddPicture("$escapedDisplayImage", True, False)
+    linkedPicture.Width = 120
+    linkedPicture.Height = 67.5
+    Set supportFiles = New Collection
+    supportFiles.Add "$escapedPlotPyPath"
+    AttachSupportFilesToInlineImage linkedPicture, supportFiles
     Set floatingAnchor = ActiveDocument.Range(ActiveDocument.Content.End - 1, ActiveDocument.Content.End - 1)
     Set existingFloatingPicture = ActiveDocument.Shapes.AddPicture("$escapedDisplayImage", False, True, 72, 144, 160, 90, floatingAnchor)
     existingFloatingPicture.RelativeHorizontalPosition = wdRelativeHorizontalPositionPage
@@ -189,12 +197,16 @@ End Function
 
     Write-Step 'Macro returned; checking document'
     $shapeCount = $doc.InlineShapes.Count
-    if ($shapeCount -ne 3) {
-        throw "Expected 3 inline shape(s), found $shapeCount"
+    if ($shapeCount -ne 4) {
+        throw "Expected 4 inline shape(s), found $shapeCount"
     }
     $attachedShape = $doc.InlineShapes.Item(3)
     if ([math]::Abs($attachedShape.Width - 180) -gt 0.5 -or [math]::Abs($attachedShape.Height - 101.25) -gt 0.5) {
         throw "Expected attached image size 180 x 101.25 pt, found $([math]::Round($attachedShape.Width, 2)) x $([math]::Round($attachedShape.Height, 2)) pt"
+    }
+    $linkedAttachedShape = $doc.InlineShapes.Item(4)
+    if ([math]::Abs($linkedAttachedShape.Width - 120) -gt 0.5 -or [math]::Abs($linkedAttachedShape.Height - 67.5) -gt 0.5) {
+        throw "Expected linked attached image size 120 x 67.5 pt, found $([math]::Round($linkedAttachedShape.Width, 2)) x $([math]::Round($linkedAttachedShape.Height, 2)) pt"
     }
     $floatingShapeCount = $doc.Shapes.Count
     if ($floatingShapeCount -ne 1) {

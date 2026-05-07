@@ -306,8 +306,9 @@ ExtractZipFromOleOpenXml
 - 如果图片原始印刷尺寸能放进版心，则不放大，保持原始印刷尺寸。
 - 如果图片超过版心，则按宽度比例和高度比例中较小的那个等比缩小。
 - 插件会同时设置宽度和高度，缩放比例相同，因此高宽比保持不变。
-- 给已有行内图片或行内 OLE 管理附件时，先从该对象的 `Range.WordOpenXML` 提取显示图像，再删除原对象并在同一位置插入新的 OLE 对象，最后恢复原来的 `Width` 和 `Height`。
+- 给已有行内图片或行内 OLE 管理附件时，先提取该对象的显示图像，再删除原对象并在同一位置插入新的 OLE 对象，最后恢复原来的 `Width` 和 `Height`。
 - 给已有浮动图片或浮动 OLE 管理附件时，先记录 `Width`、`Height`、`Left`、`Top`、相对定位和环绕方式；随后临时转换为行内对象以提取当前选中对象本身，再插入 OLE、转换回浮动 Shape，并恢复这些位置/布局属性。
+- 显示图提取优先级是：链接图片的 `LinkFormat.SourceFullName`、`Range.WordOpenXML` 中的内嵌 `image/*` part、最后复制到临时 Word 文档并导出 filtered HTML 后取导出的图片文件。这个 fallback 用于兼容链接图片和某些粘贴来源图片。
 
 ## 发布给用户
 

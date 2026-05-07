@@ -195,7 +195,7 @@ Public Sub AttachSupportFilesToInlineImage(ByVal targetInlineShape As Object, By
 
     ValidateSupportFiles supportFiles
 
-    imagePath = ExtractImageFromOpenXml(CStr(targetInlineShape.Range.WordOpenXML), "selected_image")
+    imagePath = ExtractImageFromInlineShape(targetInlineShape, "selected_image")
     zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
     CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
 
@@ -250,9 +250,11 @@ Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal 
     layoutInCell = targetShape.LayoutInCell
     lockAnchor = targetShape.LockAnchor
 
+    imagePath = TryGetLinkedImageSourceFromShape(targetShape)
+
     ' Convert the selected floating picture temporarily so the OpenXML only contains that image.
     Set convertedInline = targetShape.ConvertToInlineShape
-    imagePath = ExtractImageFromOpenXml(CStr(convertedInline.Range.WordOpenXML), "selected_image")
+    If Len(imagePath) = 0 Then imagePath = ExtractImageFromInlineShape(convertedInline, "selected_image")
     zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
     CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
 
@@ -389,7 +391,7 @@ Public Sub ManageFilesInInlineOle(ByVal targetInlineShape As Object, ByVal exist
         Exit Sub
     End If
 
-    imagePath = ExtractImageFromOpenXml(CStr(targetInlineShape.Range.WordOpenXML), "selected_ole_display")
+    imagePath = ExtractImageFromInlineShape(targetInlineShape, "selected_ole_display")
     newZipPath = BuildTempZipPathFromBase(fso, "managed_ole_support")
     CreateZipFromManagedFiles existingZipPath, keepEntryNames, newFiles, newZipPath, fso.GetBaseName(newZipPath)
 
@@ -438,7 +440,7 @@ Public Sub ManageFilesInFloatingOle(ByVal targetShape As Object, ByVal existingZ
     lockAnchor = targetShape.LockAnchor
 
     Set convertedInline = targetShape.ConvertToInlineShape
-    imagePath = ExtractImageFromOpenXml(CStr(convertedInline.Range.WordOpenXML), "selected_ole_display")
+    imagePath = ExtractImageFromInlineShape(convertedInline, "selected_ole_display")
     newZipPath = BuildTempZipPathFromBase(fso, "managed_ole_support")
     CreateZipFromManagedFiles existingZipPath, keepEntryNames, newFiles, newZipPath, fso.GetBaseName(newZipPath)
 
@@ -848,6 +850,173 @@ Private Function ExtractImageFromOpenXml(ByVal openXml As String, ByVal baseName
     outputPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & "." & extensionName)
     WriteBase64ToFile CStr(binaryNode.Text), outputPath
     ExtractImageFromOpenXml = outputPath
+End Function
+
+Private Function ExtractImageFromInlineShape(ByVal inlineShape As Object, ByVal baseName As String) As String
+    Dim imagePath As String
+
+    imagePath = TryGetLinkedImageSourceFromInlineShape(inlineShape)
+    If Len(imagePath) > 0 Then
+        ExtractImageFromInlineShape = imagePath
+        Exit Function
+    End If
+
+    On Error Resume Next
+    imagePath = ExtractImageFromOpenXml(CStr(inlineShape.Range.WordOpenXML), baseName)
+    If Err.Number = 0 And Len(imagePath) > 0 Then
+        On Error GoTo 0
+        ExtractImageFromInlineShape = imagePath
+        Exit Function
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    ExtractImageFromInlineShape = ExtractDisplayImageFromRangeViaHtml(inlineShape.Range, baseName)
+End Function
+
+Private Function TryGetLinkedImageSourceFromInlineShape(ByVal inlineShape As Object) As String
+    Dim fso As Object
+    Dim sourcePath As String
+
+    On Error Resume Next
+    sourcePath = CStr(inlineShape.LinkFormat.SourceFullName)
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+    On Error GoTo 0
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Len(sourcePath) > 0 Then
+        If fso.FileExists(sourcePath) Then TryGetLinkedImageSourceFromInlineShape = sourcePath
+    End If
+End Function
+
+Private Function TryGetLinkedImageSourceFromShape(ByVal targetShape As Object) As String
+    Dim fso As Object
+    Dim sourcePath As String
+
+    On Error Resume Next
+    sourcePath = CStr(targetShape.LinkFormat.SourceFullName)
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+    On Error GoTo 0
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Len(sourcePath) > 0 Then
+        If fso.FileExists(sourcePath) Then TryGetLinkedImageSourceFromShape = sourcePath
+    End If
+End Function
+
+Private Function ExtractDisplayImageFromRangeViaHtml(ByVal sourceRange As Range, ByVal baseName As String) As String
+    Dim fso As Object
+    Dim tempDoc As Document
+    Dim tempFolderPath As String
+    Dim htmlPath As String
+    Dim exportedImagePath As String
+    Dim outputPath As String
+    Dim extensionName As String
+    Dim errorMessage As String
+
+    On Error GoTo Failed
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    tempFolderPath = BuildUniqueTempFolderPath(fso, "OleRawDataInserterImageExport")
+    fso.CreateFolder tempFolderPath
+    htmlPath = fso.BuildPath(tempFolderPath, "image.html")
+
+    sourceRange.Copy
+    Set tempDoc = Application.Documents.Add(Visible:=False)
+    tempDoc.Range.Paste
+    tempDoc.SaveAs2 FileName:=htmlPath, FileFormat:=wdFormatFilteredHTML, AddToRecentFiles:=False
+
+    exportedImagePath = FindLargestImageFile(fso, tempFolderPath)
+    If Len(exportedImagePath) = 0 Then
+        Err.Raise vbObjectError + 534, "ExtractDisplayImageFromRangeViaHtml", "Word did not export an image file for the selected picture."
+    End If
+
+    extensionName = LCase$(fso.GetExtensionName(exportedImagePath))
+    If Len(extensionName) = 0 Then extensionName = "png"
+    outputPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_export_" & Format$(Now, "yyyymmdd_hhnnss") & "." & extensionName)
+    fso.CopyFile exportedImagePath, outputPath, True
+    ExtractDisplayImageFromRangeViaHtml = outputPath
+
+    On Error Resume Next
+    If Not tempDoc Is Nothing Then tempDoc.Close SaveChanges:=False
+    If fso.FolderExists(tempFolderPath) Then fso.DeleteFolder tempFolderPath, True
+    On Error GoTo 0
+    Exit Function
+
+Failed:
+    errorMessage = Err.Description
+    On Error Resume Next
+    If Not tempDoc Is Nothing Then tempDoc.Close SaveChanges:=False
+    If Not fso Is Nothing Then
+        If Len(tempFolderPath) > 0 Then
+            If fso.FolderExists(tempFolderPath) Then fso.DeleteFolder tempFolderPath, True
+        End If
+    End If
+    On Error GoTo 0
+    Err.Raise vbObjectError + 534, "ExtractDisplayImageFromRangeViaHtml", "Could not export image data from the selected picture. " & errorMessage
+End Function
+
+Private Function BuildUniqueTempFolderPath(ByVal fso As Object, ByVal prefix As String) As String
+    Dim basePath As String
+    Dim candidatePath As String
+    Dim index As Long
+
+    basePath = fso.BuildPath(GetTempFolderPath(fso), prefix & "_" & Format$(Now, "yyyymmdd_hhnnss") & "_" & CStr(CLng(Timer * 1000)))
+    candidatePath = basePath
+    index = 2
+    Do While fso.FolderExists(candidatePath)
+        candidatePath = basePath & "_" & CStr(index)
+        index = index + 1
+    Loop
+
+    BuildUniqueTempFolderPath = candidatePath
+End Function
+
+Private Function FindLargestImageFile(ByVal fso As Object, ByVal folderPath As String) As String
+    Dim bestPath As String
+    Dim bestSize As Double
+
+    FindLargestImageFileRecursive fso, folderPath, bestPath, bestSize
+    FindLargestImageFile = bestPath
+End Function
+
+Private Sub FindLargestImageFileRecursive(ByVal fso As Object, ByVal folderPath As String, ByRef bestPath As String, ByRef bestSize As Double)
+    Dim folder As Object
+    Dim subFolder As Object
+    Dim fileItem As Object
+
+    If Not fso.FolderExists(folderPath) Then Exit Sub
+    Set folder = fso.GetFolder(folderPath)
+
+    For Each fileItem In folder.Files
+        If IsImageFileExtension(fso.GetExtensionName(fileItem.Name)) Then
+            If CDbl(fileItem.Size) > bestSize Then
+                bestPath = CStr(fileItem.Path)
+                bestSize = CDbl(fileItem.Size)
+            End If
+        End If
+    Next fileItem
+
+    For Each subFolder In folder.SubFolders
+        FindLargestImageFileRecursive fso, CStr(subFolder.Path), bestPath, bestSize
+    Next subFolder
+End Sub
+
+Private Function IsImageFileExtension(ByVal extensionName As String) As Boolean
+    Select Case LCase$(extensionName)
+        Case "png", "jpg", "jpeg", "tif", "tiff", "bmp", "gif", "emf", "wmf"
+            IsImageFileExtension = True
+        Case Else
+            IsImageFileExtension = False
+    End Select
 End Function
 
 Private Function GetImageExtensionFromOpenXmlPart(ByVal partName As String, ByVal contentType As String) As String
