@@ -209,6 +209,34 @@ Public Sub AttachSupportFilesToInlineImage(ByVal targetInlineShape As Object, By
     InsertImageZipAsOleWithSize imagePath, zipPath, imageWidth, imageHeight
 End Sub
 
+Public Sub AttachWorkingFolderToInlineImage(ByVal targetInlineShape As Object, ByVal workingFolderPath As String)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim zipPath As String
+    Dim targetRange As Range
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetInlineShape Is Nothing Then
+        MsgBox "The selected image is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    imagePath = ExtractImageFromInlineShape(targetInlineShape, "selected_image")
+    zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
+    CreateZipFromWorkingFolder workingFolderPath, zipPath, False
+
+    imageWidth = targetInlineShape.Width
+    imageHeight = targetInlineShape.Height
+    Set targetRange = targetInlineShape.Range.Duplicate
+    targetRange.Collapse wdCollapseStart
+
+    targetInlineShape.Delete
+    targetRange.Select
+    InsertImageZipAsOleWithSize imagePath, zipPath, imageWidth, imageHeight
+End Sub
+
 Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal supportFiles As Collection)
     Dim fso As Object
     Dim imagePath As String
@@ -254,7 +282,9 @@ Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal 
 
     ' Convert the selected floating picture temporarily so the OpenXML only contains that image.
     Set convertedInline = targetShape.ConvertToInlineShape
-    If Len(imagePath) = 0 Then imagePath = ExtractImageFromInlineShape(convertedInline, "selected_image")
+    If Len(imagePath) = 0 Then
+        imagePath = ExtractImageFromInlineShape(convertedInline, "selected_image")
+    End If
     zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
     CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
 
@@ -278,18 +308,117 @@ Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal 
         oleShape.WrapFormat.Type = wrapType
         oleShape.LayoutInCell = layoutInCell
         oleShape.LockAnchor = lockAnchor
+        oleShape.LockAspectRatio = msoFalse
         oleShape.Fill.Visible = msoTrue
         oleShape.Fill.UserPicture imagePath
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Sub AttachWorkingFolderToFloatingImage(ByVal targetShape As Object, ByVal workingFolderPath As String)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim zipPath As String
+    Dim anchorRange As Range
+    Dim convertedInline As InlineShape
+    Dim oleInline As InlineShape
+    Dim oleShape As Shape
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim imageLeft As Single
+    Dim imageTop As Single
+    Dim relativeHorizontalPosition As Long
+    Dim relativeVerticalPosition As Long
+    Dim wrapType As Long
+    Dim layoutInCell As Long
+    Dim lockAnchor As Boolean
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetShape Is Nothing Then
+        MsgBox "The selected image is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    If Not IsFloatingPictureShape(targetShape) Then
+        MsgBox "Please select a picture, not another kind of floating object.", vbExclamation
+        Exit Sub
+    End If
+
+    imageWidth = targetShape.Width
+    imageHeight = targetShape.Height
+    imageLeft = targetShape.Left
+    imageTop = targetShape.Top
+    relativeHorizontalPosition = targetShape.RelativeHorizontalPosition
+    relativeVerticalPosition = targetShape.RelativeVerticalPosition
+    wrapType = targetShape.WrapFormat.Type
+    layoutInCell = targetShape.LayoutInCell
+    lockAnchor = targetShape.LockAnchor
+
+    imagePath = TryGetLinkedImageSourceFromShape(targetShape)
+
+    Set convertedInline = targetShape.ConvertToInlineShape
+    If Len(imagePath) = 0 Then
+        imagePath = ExtractImageFromInlineShape(convertedInline, "selected_image")
+    End If
+    zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
+    CreateZipFromWorkingFolder workingFolderPath, zipPath, False
+
+    Set anchorRange = convertedInline.Range.Duplicate
+    anchorRange.Collapse wdCollapseStart
+    convertedInline.Delete
+    anchorRange.Select
+    Set oleInline = AddImageZipOleInline(imagePath, zipPath)
+    oleInline.Width = imageWidth
+    oleInline.Height = imageHeight
+
+    On Error Resume Next
+    Set oleShape = oleInline.ConvertToShape
+    If Not oleShape Is Nothing Then
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.RelativeHorizontalPosition = relativeHorizontalPosition
+        oleShape.RelativeVerticalPosition = relativeVerticalPosition
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
+        oleShape.WrapFormat.Type = wrapType
+        oleShape.LayoutInCell = layoutInCell
+        oleShape.LockAnchor = lockAnchor
+        oleShape.LockAspectRatio = msoFalse
+        oleShape.Fill.Visible = msoTrue
+        oleShape.Fill.UserPicture imagePath
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
     End If
     On Error GoTo 0
 End Sub
 
 Public Function ExtractZipFromInlineOleObject(ByVal targetInlineShape As Object) As String
+    Dim targetRange As Range
+    Dim openXml As String
+    Dim stage As String
+
+    On Error GoTo Failed
+
     If targetInlineShape Is Nothing Then
         Err.Raise vbObjectError + 540, "ExtractZipFromInlineOleObject", "The selected OLE object is no longer available."
     End If
 
-    ExtractZipFromInlineOleObject = ExtractZipFromOleOpenXml(CStr(targetInlineShape.Range.WordOpenXML), "selected_ole")
+    stage = "read inline shape range"
+    Set targetRange = ReadInlineShapeRangeWithRetry(targetInlineShape, "ExtractZipFromInlineOleObject")
+    stage = "read WordOpenXML"
+    openXml = ReadRangeWordOpenXmlWithRetry(targetRange, "ExtractZipFromInlineOleObject")
+    stage = "extract zip from OLE XML"
+    ExtractZipFromInlineOleObject = ExtractZipFromOleOpenXml(openXml, "selected_ole")
+    Exit Function
+
+Failed:
+    Err.Raise Err.Number, "ExtractZipFromInlineOleObject", stage & ": " & Err.Description
 End Function
 
 Public Function ExtractZipFromFloatingOleObject(ByRef targetShape As Object) As String
@@ -321,7 +450,7 @@ Public Function ExtractZipFromFloatingOleObject(ByRef targetShape As Object) As 
     lockAnchor = targetShape.LockAnchor
 
     Set convertedInline = targetShape.ConvertToInlineShape
-    zipPath = ExtractZipFromOleOpenXml(CStr(convertedInline.Range.WordOpenXML), "selected_ole")
+    zipPath = ExtractZipFromOleOpenXml(ReadRangeWordOpenXmlWithRetry(convertedInline.Range, "ExtractZipFromFloatingOleObject"), "selected_ole")
     Set restoredShape = convertedInline.ConvertToShape
     restoredShape.Width = imageWidth
     restoredShape.Height = imageHeight
@@ -337,14 +466,126 @@ Public Function ExtractZipFromFloatingOleObject(ByRef targetShape As Object) As 
     ExtractZipFromFloatingOleObject = zipPath
 End Function
 
+Public Function ExtractDisplayImageFromInlineOleObject(ByVal targetInlineShape As Object) As String
+    If targetInlineShape Is Nothing Then
+        Err.Raise vbObjectError + 564, "ExtractDisplayImageFromInlineOleObject", "The selected OLE object is no longer available."
+    End If
+
+    ExtractDisplayImageFromInlineOleObject = ExtractImageFromInlineShape(targetInlineShape, "selected_ole_display")
+End Function
+
+Public Function ExtractDisplayImageFromFloatingOleObject(ByRef targetShape As Object) As String
+    Dim convertedInline As InlineShape
+    Dim restoredShape As Shape
+    Dim imagePath As String
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim imageLeft As Single
+    Dim imageTop As Single
+    Dim relativeHorizontalPosition As Long
+    Dim relativeVerticalPosition As Long
+    Dim wrapType As Long
+    Dim layoutInCell As Long
+    Dim lockAnchor As Boolean
+
+    If targetShape Is Nothing Then
+        Err.Raise vbObjectError + 565, "ExtractDisplayImageFromFloatingOleObject", "The selected OLE object is no longer available."
+    End If
+
+    imageWidth = targetShape.Width
+    imageHeight = targetShape.Height
+    imageLeft = targetShape.Left
+    imageTop = targetShape.Top
+    relativeHorizontalPosition = targetShape.RelativeHorizontalPosition
+    relativeVerticalPosition = targetShape.RelativeVerticalPosition
+    wrapType = targetShape.WrapFormat.Type
+    layoutInCell = targetShape.LayoutInCell
+    lockAnchor = targetShape.LockAnchor
+
+    Set convertedInline = targetShape.ConvertToInlineShape
+    imagePath = ExtractImageFromInlineShape(convertedInline, "selected_ole_display")
+    Set restoredShape = convertedInline.ConvertToShape
+    restoredShape.Width = imageWidth
+    restoredShape.Height = imageHeight
+    restoredShape.RelativeHorizontalPosition = relativeHorizontalPosition
+    restoredShape.RelativeVerticalPosition = relativeVerticalPosition
+    restoredShape.Left = imageLeft
+    restoredShape.Top = imageTop
+    restoredShape.WrapFormat.Type = wrapType
+    restoredShape.LayoutInCell = layoutInCell
+    restoredShape.LockAnchor = lockAnchor
+    Set targetShape = restoredShape
+
+    ExtractDisplayImageFromFloatingOleObject = imagePath
+End Function
+
+Private Function ReadInlineShapeRangeWithRetry(ByVal targetInlineShape As Object, ByVal errorSource As String) As Range
+    Dim attempt As Long
+    Dim targetRange As Range
+    Dim lastErrNumber As Long
+    Dim lastErrDescription As String
+
+    For attempt = 1 To 12
+        On Error Resume Next
+        Set targetRange = targetInlineShape.Range
+        lastErrNumber = Err.Number
+        lastErrDescription = Err.Description
+        Err.Clear
+        On Error GoTo 0
+
+        If lastErrNumber = 0 And Not targetRange Is Nothing Then
+            Set ReadInlineShapeRangeWithRetry = targetRange
+            Exit Function
+        End If
+
+        DoEvents
+        Sleep 250
+    Next attempt
+
+    If lastErrNumber = 0 Then
+        lastErrNumber = vbObjectError + 561
+        lastErrDescription = "Could not access the selected OLE object range."
+    End If
+    Err.Raise lastErrNumber, errorSource, lastErrDescription
+End Function
+
+Private Function ReadRangeWordOpenXmlWithRetry(ByVal sourceRange As Range, ByVal errorSource As String) As String
+    Dim attempt As Long
+    Dim openXml As String
+    Dim lastErrNumber As Long
+    Dim lastErrDescription As String
+
+    For attempt = 1 To 12
+        On Error Resume Next
+        openXml = CStr(sourceRange.WordOpenXML)
+        lastErrNumber = Err.Number
+        lastErrDescription = Err.Description
+        Err.Clear
+        On Error GoTo 0
+
+        If lastErrNumber = 0 And Len(openXml) > 0 Then
+            ReadRangeWordOpenXmlWithRetry = openXml
+            Exit Function
+        End If
+
+        DoEvents
+        Sleep 250
+    Next attempt
+
+    If lastErrNumber = 0 Then
+        lastErrNumber = vbObjectError + 560
+        lastErrDescription = "Could not read the selected OLE object XML."
+    End If
+    Err.Raise lastErrNumber, errorSource, lastErrDescription
+End Function
+
 Public Function GetZipEntryNames(ByVal zipPath As String) As Collection
     Dim entries As Collection
     Dim fso As Object
     Dim listPath As String
-    Dim wsh As Object
-    Dim command As String
-    Dim exitCode As Long
-    Dim fileNum As Integer
+    Dim listText As String
+    Dim lines As Variant
+    Dim lineItem As Variant
     Dim lineText As String
     Dim normalizedEntry As String
 
@@ -354,27 +595,22 @@ Public Function GetZipEntryNames(ByVal zipPath As String) As Collection
         Err.Raise vbObjectError + 541, "GetZipEntryNames", "Zip file does not exist: " & zipPath
     End If
 
-    listPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterZipList_" & Format$(Now, "yyyymmdd_hhnnss") & ".txt")
-    command = "cmd.exe /c tar.exe -tf " & QuoteForCommandLine(zipPath) & " > " & QuoteForCommandLine(listPath)
-    Set wsh = CreateObject("WScript.Shell")
-    exitCode = wsh.Run(command, 0, True)
-    If exitCode <> 0 Then
-        Err.Raise vbObjectError + 542, "GetZipEntryNames", "tar.exe failed to list zip entries with exit code " & exitCode
-    End If
+    listPath = BuildTempFilePath(fso, "OleRawDataInserterZipList", ".txt")
+    RunZipTool "list " & QuoteForCommandLine(zipPath) & " " & QuoteForCommandLine(listPath), "GetZipEntryNames"
 
     If fso.FileExists(listPath) Then
-        fileNum = FreeFile
-        Open listPath For Input As #fileNum
-        Do While Not EOF(fileNum)
-            Line Input #fileNum, lineText
+        listText = ReadUtf8TextFile(listPath)
+        listText = Replace(Replace(listText, vbCrLf, vbLf), vbCr, vbLf)
+        lines = Split(listText, vbLf)
+        For Each lineItem In lines
+            lineText = CStr(lineItem)
             If Not IsZipDirectoryEntry(lineText) Then
                 normalizedEntry = NormalizeZipEntryName(lineText)
                 If Len(normalizedEntry) > 0 Then entries.Add normalizedEntry
             End If
-        Loop
-        Close #fileNum
-        fso.DeleteFile listPath, True
+        Next lineItem
     End If
+    DeleteFileIfExists fso, listPath
 
     Set GetZipEntryNames = entries
 End Function
@@ -410,6 +646,49 @@ Public Sub ManageFilesInInlineOle(ByVal targetInlineShape As Object, ByVal exist
     targetInlineShape.Delete
     targetRange.Select
     InsertImageZipAsOleWithSize imagePath, newZipPath, imageWidth, imageHeight
+End Sub
+
+Public Sub ManageWorkingFolderInInlineOle(ByVal targetInlineShape As Object, ByVal workingFolderPath As String, Optional ByVal displayImagePath As String = vbNullString)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim newZipPath As String
+    Dim targetRange As Range
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim stage As String
+
+    On Error GoTo Failed
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetInlineShape Is Nothing Then
+        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    stage = "resolve display image"
+    imagePath = Trim$(displayImagePath)
+    If Len(imagePath) = 0 Or Not fso.FileExists(imagePath) Then
+        imagePath = ExtractImageFromInlineShape(targetInlineShape, "selected_ole_display")
+    End If
+    newZipPath = BuildTempZipPathFromBase(fso, "managed_ole_support")
+
+    stage = "create UTF-8 zip"
+    CreateZipFromWorkingFolder workingFolderPath, newZipPath, True
+
+    stage = "capture original size"
+    imageWidth = targetInlineShape.Width
+    imageHeight = targetInlineShape.Height
+    Set targetRange = targetInlineShape.Range.Duplicate
+    targetRange.Collapse wdCollapseStart
+
+    stage = "replace selected OLE"
+    targetInlineShape.Delete
+    targetRange.Select
+    InsertImageZipAsOleWithSize imagePath, newZipPath, imageWidth, imageHeight
+    Exit Sub
+
+Failed:
+    Err.Raise Err.Number, "ManageWorkingFolderInInlineOle", stage & ": " & Err.Description
 End Sub
 
 Public Sub ManageFilesInFloatingOle(ByVal targetShape As Object, ByVal existingZipPath As String, ByVal keepEntryNames As Collection, ByVal newFiles As Collection)
@@ -471,8 +750,86 @@ Public Sub ManageFilesInFloatingOle(ByVal targetShape As Object, ByVal existingZ
         oleShape.WrapFormat.Type = wrapType
         oleShape.LayoutInCell = layoutInCell
         oleShape.LockAnchor = lockAnchor
+        oleShape.LockAspectRatio = msoFalse
         oleShape.Fill.Visible = msoTrue
         oleShape.Fill.UserPicture imagePath
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Sub ManageWorkingFolderInFloatingOle(ByVal targetShape As Object, ByVal workingFolderPath As String, Optional ByVal displayImagePath As String = vbNullString)
+    Dim fso As Object
+    Dim imagePath As String
+    Dim newZipPath As String
+    Dim anchorRange As Range
+    Dim convertedInline As InlineShape
+    Dim oleInline As InlineShape
+    Dim oleShape As Shape
+    Dim imageWidth As Double
+    Dim imageHeight As Double
+    Dim imageLeft As Single
+    Dim imageTop As Single
+    Dim relativeHorizontalPosition As Long
+    Dim relativeVerticalPosition As Long
+    Dim wrapType As Long
+    Dim layoutInCell As Long
+    Dim lockAnchor As Boolean
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If targetShape Is Nothing Then
+        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        Exit Sub
+    End If
+
+    imageWidth = targetShape.Width
+    imageHeight = targetShape.Height
+    imageLeft = targetShape.Left
+    imageTop = targetShape.Top
+    relativeHorizontalPosition = targetShape.RelativeHorizontalPosition
+    relativeVerticalPosition = targetShape.RelativeVerticalPosition
+    wrapType = targetShape.WrapFormat.Type
+    layoutInCell = targetShape.LayoutInCell
+    lockAnchor = targetShape.LockAnchor
+
+    imagePath = Trim$(displayImagePath)
+    Set convertedInline = targetShape.ConvertToInlineShape
+    If Len(imagePath) = 0 Or Not fso.FileExists(imagePath) Then
+        imagePath = ExtractImageFromInlineShape(convertedInline, "selected_ole_display")
+    End If
+    newZipPath = BuildTempZipPathFromBase(fso, "managed_ole_support")
+    CreateZipFromWorkingFolder workingFolderPath, newZipPath, True
+
+    Set anchorRange = convertedInline.Range.Duplicate
+    anchorRange.Collapse wdCollapseStart
+    convertedInline.Delete
+    anchorRange.Select
+    Set oleInline = AddImageZipOleInline(imagePath, newZipPath)
+    oleInline.Width = imageWidth
+    oleInline.Height = imageHeight
+
+    On Error Resume Next
+    Set oleShape = oleInline.ConvertToShape
+    If Not oleShape Is Nothing Then
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.RelativeHorizontalPosition = relativeHorizontalPosition
+        oleShape.RelativeVerticalPosition = relativeVerticalPosition
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
+        oleShape.WrapFormat.Type = wrapType
+        oleShape.LayoutInCell = layoutInCell
+        oleShape.LockAnchor = lockAnchor
+        oleShape.LockAspectRatio = msoFalse
+        oleShape.Fill.Visible = msoTrue
+        oleShape.Fill.UserPicture imagePath
+        oleShape.Width = imageWidth
+        oleShape.Height = imageHeight
+        oleShape.Left = imageLeft
+        oleShape.Top = imageTop
     End If
     On Error GoTo 0
 End Sub
@@ -508,6 +865,38 @@ Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supp
     CreateZipFromSupportFiles supportFiles, zipPath, fso.GetBaseName(imagePath)
 
     InsertImageZipAsOle imagePath, zipPath
+End Sub
+
+Public Sub InsertImageAndWorkingFolderAsOle(ByVal imagePath As String, ByVal workingFolderPath As String)
+    Dim fso As Object
+    Dim zipPath As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    imagePath = Trim$(imagePath)
+
+    If Not fso.FileExists(imagePath) Then
+        MsgBox "Image file does not exist: " & imagePath, vbCritical
+        Exit Sub
+    End If
+
+    If Not IsSupportedDisplayImage(fso.GetExtensionName(imagePath)) Then
+        MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
+        Exit Sub
+    End If
+
+    zipPath = BuildTempZipPathFromBase(fso, fso.GetBaseName(imagePath) & "_support")
+    CreateZipFromWorkingFolder workingFolderPath, zipPath, False
+
+    InsertImageZipAsOle imagePath, zipPath
+End Sub
+
+Public Sub ExtractZipToWorkingFolder(ByVal zipPath As String, ByVal targetFolder As String)
+    Dim fso As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    DeleteFolderIfExists fso, targetFolder
+    fso.CreateFolder targetFolder
+    ExtractZipToFolder zipPath, targetFolder
 End Sub
 
 Private Sub InsertImageZipAsOle(ByVal imagePath As String, ByVal zipPath As String)
@@ -757,19 +1146,21 @@ Private Function BuildUsageHelpText() As String
         "3. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Figure Package\uFF0C\u9009\u62E9\u8FD9\u4E2A\u6587\u4EF6\u5939\u3002\n" & _
         "4. \u63D2\u4EF6\u4F1A\u628A\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u539F\u59CB\u6570\u636E\u548C\u811A\u672C\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F plot.png\u3002\n" & _
         "5. \u6253\u5305\u65F6\u4E0D\u4F1A\u5305\u542B\u9876\u5C42 plot.png\u3001plot.svg\u3001plot.pdf\uFF1B\u4F1A\u5305\u542B plot.py\u3001\u5176\u4ED6\u6570\u636E\u6587\u4EF6\u3001\u811A\u672C\u3001\u56FE\u7247\u548C\u5B50\u6587\u4EF6\u5939\u3002\n\n" & _
-        "\u65B9\u5F0F\u4E8C\uFF1A\u56FE\u7247 + \u652F\u6301\u6587\u4EF6\n" & _
+        "\u65B9\u5F0F\u4E8C\uFF1A\u56FE\u7247 + \u5305\u5185\u5BB9\u6587\u4EF6\u5939\n" & _
         "1. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Image + Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
         "2. \u5728\u7A97\u53E3\u4E2D\u70B9\u51FB Choose image...\uFF0C\u9009\u62E9\u8981\u663E\u793A\u7684\u56FE\u7247\uFF0C\u652F\u6301 png\u3001jpg\u3001jpeg\u3001tif\u3001tiff\u3002\n" & _
-        "3. \u70B9\u51FB Add files... \u591A\u9009\u9700\u8981\u5D4C\u5165\u7684\u652F\u6301\u6587\u4EF6\uFF0C\u4E5F\u53EF\u70B9\u51FB Add folder... \u6DFB\u52A0\u6574\u4E2A\u6587\u4EF6\u5939\uFF1B\u6587\u4EF6\u7C7B\u578B\u4E0D\u9650\u3002\n" & _
-        "4. \u5982\u679C\u9009\u9519\u4E86\uFF0C\u53EF\u4EE5\u7528 Remove selected \u6216 Clear \u8C03\u6574\u5217\u8868\u3002\n" & _
-        "5. \u786E\u8BA4\u56FE\u7247\u548C\u652F\u6301\u6587\u4EF6\u5217\u8868\u65E0\u8BEF\u540E\uFF0C\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u652F\u6301\u6587\u4EF6\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
-        "6. \u5982\u679C\u652F\u6301\u6587\u4EF6\u540C\u540D\uFF0Czip \u5185\u4F1A\u81EA\u52A8\u6539\u540D\uFF0C\u907F\u514D\u8986\u76D6\u3002\n\n" & _
+        "3. \u63D2\u4EF6\u4F1A\u521B\u5EFA\u4E00\u4E2A\u4E34\u65F6\u5305\u5185\u5BB9\u6587\u4EF6\u5939\uFF0C\u5E76\u5728\u7A97\u53E3\u4E2D\u663E\u793A\u5B83\u7684\u4F4D\u7F6E\u3002\n" & _
+        "4. \u70B9\u51FB Open Folder...\uFF0C\u5728 Explorer \u4E2D\u628A\u9700\u8981\u5D4C\u5165\u7684\u6587\u4EF6\u548C\u6587\u4EF6\u5939\u590D\u5236\u3001\u62D6\u653E\u3001\u5220\u9664\u6216\u91CD\u547D\u540D\uFF1B\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u5185\u5BB9\u5C31\u662F\u6700\u7EC8 zip \u7684\u5185\u5BB9\u3002\n" & _
+        "5. \u786E\u8BA4\u540E\u56DE\u5230 Word \u7A97\u53E3\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u5305\u5185\u5BB9\u6587\u4EF6\u5939\u91CC\u7684\u5185\u5BB9\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
+        "6. \u8BE5\u6587\u4EF6\u5939\u672C\u8EAB\u4E0D\u4F1A\u8FDB\u5165 zip\uFF1B\u5B83\u7684\u9876\u5C42\u5185\u5BB9\u4F1A\u6210\u4E3A zip \u6839\u76EE\u5F55\uFF0C\u5B50\u6587\u4EF6\u5939\u4F1A\u4FDD\u7559\u76F8\u5BF9\u8DEF\u5F84\u3002\n" & _
+        "\n" & _
         "\u65B9\u5F0F\u4E09\uFF1A\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u7684\u9644\u4EF6\n" & _
         "1. \u5148\u5728 Word \u6587\u6863\u4E2D\u9009\u4E2D\u4E00\u5F20\u5DF2\u63D2\u5165\u7684\u56FE\u7247\uFF0C\u6216\u9009\u4E2D\u4E00\u4E2A\u5DF2\u6709\u7684 Figure Package OLE \u5BF9\u8C61\u3002\n" & _
         "2. \u70B9\u51FB Figure Package > Manage Image/OLE Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
-        "3. \u5982\u679C\u9009\u4E2D\u7684\u662F\u666E\u901A\u56FE\u7247\uFF0C\u6DFB\u52A0\u652F\u6301\u6587\u4EF6\u540E\u70B9\u51FB Insert\uFF1B\u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n" & _
-        "4. \u5982\u679C\u9009\u4E2D\u7684\u662F\u5DF2\u6709 OLE \u5BF9\u8C61\uFF0C\u7A97\u53E3\u4F1A\u5217\u51FA\u73B0\u6709 zip \u4E2D\u7684\u6587\u4EF6\uFF1B\u5220\u9664 [embedded] \u6761\u76EE\u8868\u793A\u4ECE\u6700\u7EC8\u5305\u4E2D\u79FB\u9664\uFF0C\u6DFB\u52A0 [new] \u6761\u76EE\u8868\u793A\u65B0\u589E\u6587\u4EF6\u6216\u6587\u4EF6\u5939\u3002\n" & _
-        "5. \u786E\u8BA4\u5217\u8868\u540E\u70B9\u51FB Insert\uFF0C\u63D2\u4EF6\u4F1A\u91CD\u65B0\u751F\u6210 zip OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4FDD\u6301\u4E0D\u53D8\u3002\n\n" & _
+        "3. \u5982\u679C\u9009\u4E2D\u7684\u662F\u666E\u901A\u56FE\u7247\uFF0C\u63D2\u4EF6\u4F1A\u521B\u5EFA\u7A7A\u7684\u5305\u5185\u5BB9\u6587\u4EF6\u5939\uFF1B\u70B9\u51FB Open Folder...\uFF0C\u628A\u652F\u6301\u6587\u4EF6\u548C\u6587\u4EF6\u5939\u653E\u8FDB\u53BB\u540E\uFF0C\u56DE\u5230 Word \u7A97\u53E3\u70B9\u51FB Insert\uFF1B\u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n" & _
+        "4. \u5982\u679C\u9009\u4E2D\u7684\u662F\u5DF2\u6709 OLE \u5BF9\u8C61\uFF0C\u63D2\u4EF6\u4F1A\u628A\u73B0\u6709 zip \u89E3\u538B\u5230\u5305\u5185\u5BB9\u6587\u4EF6\u5939\uFF1B\u70B9\u51FB Open Folder...\uFF0C\u5728 Explorer \u4E2D\u76F4\u63A5\u65B0\u589E\u3001\u5220\u9664\u3001\u91CD\u547D\u540D\u6216\u79FB\u52A8\u6587\u4EF6\u548C\u6587\u4EF6\u5939\u3002\n" & _
+        "5. \u786E\u8BA4\u540E\u56DE\u5230 Word \u7A97\u53E3\u70B9\u51FB Rebuild\uFF0C\u63D2\u4EF6\u4F1A\u6309\u8BE5\u6587\u4EF6\u5939\u7684\u5F53\u524D\u5185\u5BB9\u91CD\u65B0\u751F\u6210 zip OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4FDD\u6301\u4E0D\u53D8\u3002\n" & _
+        "\n" & _
         "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u65B0\u63D2\u5165\u56FE\u7247\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF0C\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\uFF1B\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u65F6\u4FDD\u6301\u539F\u5BF9\u8C61\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002"
 
     BuildUsageHelpText = DecodeEscapedText(escaped)
@@ -846,6 +1237,9 @@ Private Function ExtractImageFromOpenXml(ByVal openXml As String, ByVal baseName
     Set imagePart = imageParts.Item(0)
     Set binaryNode = imagePart.SelectSingleNode("pkg:binaryData")
     If binaryNode Is Nothing Then
+        Set binaryNode = imagePart.SelectSingleNode("*[local-name()='binaryData']")
+    End If
+    If binaryNode Is Nothing Then
         Err.Raise vbObjectError + 533, "ExtractImageFromOpenXml", "Could not find embedded image bytes in the selected picture."
     End If
 
@@ -854,13 +1248,15 @@ Private Function ExtractImageFromOpenXml(ByVal openXml As String, ByVal baseName
     extensionName = GetImageExtensionFromOpenXmlPart(partName, contentType)
 
     Set fso = CreateObject("Scripting.FileSystemObject")
-    outputPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & "." & extensionName)
+    outputPath = BuildTempFilePath(fso, SanitizeFileName(baseName), "." & extensionName)
     WriteBase64ToFile CStr(binaryNode.Text), outputPath
     ExtractImageFromOpenXml = outputPath
 End Function
 
 Private Function ExtractImageFromInlineShape(ByVal inlineShape As Object, ByVal baseName As String) As String
     Dim imagePath As String
+    Dim sourceRange As Range
+    Dim openXml As String
 
     imagePath = TryGetLinkedImageSourceFromInlineShape(inlineShape)
     If Len(imagePath) > 0 Then
@@ -868,8 +1264,13 @@ Private Function ExtractImageFromInlineShape(ByVal inlineShape As Object, ByVal 
         Exit Function
     End If
 
+    Set sourceRange = ReadInlineShapeRangeWithRetry(inlineShape, "ExtractImageFromInlineShape")
+
     On Error Resume Next
-    imagePath = ExtractImageFromOpenXml(CStr(inlineShape.Range.WordOpenXML), baseName)
+    openXml = ReadRangeWordOpenXmlWithRetry(sourceRange, "ExtractImageFromInlineShape")
+    If Err.Number = 0 Then
+        imagePath = ExtractImageFromOpenXml(openXml, baseName)
+    End If
     If Err.Number = 0 And Len(imagePath) > 0 Then
         On Error GoTo 0
         ExtractImageFromInlineShape = imagePath
@@ -878,7 +1279,7 @@ Private Function ExtractImageFromInlineShape(ByVal inlineShape As Object, ByVal 
     Err.Clear
     On Error GoTo 0
 
-    ExtractImageFromInlineShape = ExtractDisplayImageFromRangeViaHtml(inlineShape.Range, baseName)
+    ExtractImageFromInlineShape = ExtractDisplayImageFromRangeViaHtml(sourceRange, baseName)
 End Function
 
 Private Function TryGetLinkedImageSourceFromInlineShape(ByVal inlineShape As Object) As String
@@ -936,9 +1337,23 @@ Private Function ExtractDisplayImageFromRangeViaHtml(ByVal sourceRange As Range,
     fso.CreateFolder tempFolderPath
     htmlPath = fso.BuildPath(tempFolderPath, "image.html")
 
-    sourceRange.Copy
+    sourceRange.Select
+    On Error Resume Next
+    Selection.CopyAsPicture
+    If Err.Number <> 0 Then
+        Err.Clear
+        sourceRange.Copy
+    End If
+    On Error GoTo Failed
+
     Set tempDoc = Application.Documents.Add(Visible:=False)
-    tempDoc.Range.Paste
+    On Error Resume Next
+    tempDoc.Range.PasteSpecial DataType:=wdPasteEnhancedMetafile
+    If Err.Number <> 0 Then
+        Err.Clear
+        tempDoc.Range.Paste
+    End If
+    On Error GoTo Failed
     tempDoc.SaveAs2 FileName:=htmlPath, FileFormat:=wdFormatFilteredHTML, AddToRecentFiles:=False
 
     exportedImagePath = FindLargestImageFile(fso, tempFolderPath)
@@ -948,7 +1363,7 @@ Private Function ExtractDisplayImageFromRangeViaHtml(ByVal sourceRange As Range,
 
     extensionName = LCase$(fso.GetExtensionName(exportedImagePath))
     If Len(extensionName) = 0 Then extensionName = "png"
-    outputPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_export_" & Format$(Now, "yyyymmdd_hhnnss") & "." & extensionName)
+    outputPath = BuildTempFilePath(fso, SanitizeFileName(baseName) & "_export", "." & extensionName)
     fso.CopyFile exportedImagePath, outputPath, True
     ExtractDisplayImageFromRangeViaHtml = outputPath
 
@@ -1116,7 +1531,7 @@ Private Function ExtractZipFromOleOpenXml(ByVal openXml As String, ByVal baseNam
     End If
 
     Set fso = CreateObject("Scripting.FileSystemObject")
-    olePath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & ".bin")
+    olePath = BuildTempFilePath(fso, SanitizeFileName(baseName), ".bin")
     WriteBase64ToFile CStr(binaryNode.Text), olePath
     ExtractZipFromOleOpenXml = ExtractZipFromOlePackageFile(olePath, baseName)
 End Function
@@ -1144,7 +1559,7 @@ Private Function ExtractZipFromOlePackageFile(ByVal olePath As String, ByVal bas
         zipSize = ByteArrayLength(nativeBytes) - zipStart
     End If
 
-    zipPath = fso.BuildPath(GetTempFolderPath(fso), SanitizeFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss") & ".zip")
+    zipPath = BuildTempFilePath(fso, SanitizeFileName(baseName), ".zip")
     WriteByteRangeToFile nativeBytes, zipStart, zipSize, zipPath
     ExtractZipFromOlePackageFile = zipPath
 End Function
@@ -1531,6 +1946,27 @@ Failed:
     Err.Raise errNumber, errSource, errDescription
 End Sub
 
+Private Sub CreateZipFromWorkingFolder(ByVal workingFolderPath As String, ByVal zipPath As String, ByVal allowEmpty As Boolean)
+    Dim fso As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    workingFolderPath = Trim$(workingFolderPath)
+
+    If Len(workingFolderPath) = 0 Or Not fso.FolderExists(workingFolderPath) Then
+        Err.Raise vbObjectError + 557, "CreateZipFromWorkingFolder", "Package contents folder does not exist: " & workingFolderPath
+    End If
+
+    If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
+
+    If FolderHasAnyFiles(fso.GetFolder(workingFolderPath)) Then
+        CreateZipFromPath workingFolderPath, zipPath, False
+    ElseIf allowEmpty Then
+        CreateEmptyZip zipPath
+    Else
+        Err.Raise vbObjectError + 558, "CreateZipFromWorkingFolder", "Package contents folder is empty: " & workingFolderPath
+    End If
+End Sub
+
 Private Sub CreateZipFromManagedFiles(ByVal existingZipPath As String, ByVal keepEntryNames As Collection, ByVal newFiles As Collection, ByVal zipPath As String, ByVal baseName As String)
     Dim fso As Object
     Dim stagingFolder As String
@@ -1574,16 +2010,7 @@ Failed:
 End Sub
 
 Private Sub ExtractZipToFolder(ByVal zipPath As String, ByVal targetFolder As String)
-    Dim wsh As Object
-    Dim command As String
-    Dim exitCode As Long
-
-    command = "cmd.exe /c tar.exe -xf " & QuoteForCommandLine(zipPath) & " -C " & QuoteForCommandLine(targetFolder)
-    Set wsh = CreateObject("WScript.Shell")
-    exitCode = wsh.Run(command, 0, True)
-    If exitCode <> 0 Then
-        Err.Raise vbObjectError + 556, "ExtractZipToFolder", "tar.exe failed to extract zip with exit code " & exitCode
-    End If
+    RunZipTool "extract " & QuoteForCommandLine(zipPath) & " " & QuoteForCommandLine(targetFolder), "ExtractZipToFolder"
 End Sub
 
 Private Sub PruneStagedZipEntries(ByVal fso As Object, ByVal stagingFolder As String, ByVal keepEntryNames As Collection)
@@ -1693,6 +2120,13 @@ Private Function BuildTempStagingFolderPath(ByVal fso As Object, ByVal baseName 
     BuildTempStagingFolderPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserter_" & baseName & "_" & stamp)
 End Function
 
+Private Function BuildTempFilePath(ByVal fso As Object, ByVal prefix As String, ByVal extensionName As String) As String
+    Dim stamp As String
+
+    stamp = Format$(Now, "yyyymmdd_hhnnss") & "_" & CStr(CLng(Timer * 1000))
+    BuildTempFilePath = fso.BuildPath(GetTempFolderPath(fso), prefix & "_" & stamp & extensionName)
+End Function
+
 Private Sub StageSupportFiles(ByVal fso As Object, ByVal supportFiles As Collection, ByVal stagingFolder As String)
     Dim usedNames As Object
     Dim supportPath As Variant
@@ -1799,30 +2233,22 @@ Private Sub DeleteFolderIfExists(ByVal fso As Object, ByVal folderPath As String
     End If
 End Sub
 
+Private Sub DeleteFileIfExists(ByVal fso As Object, ByVal filePath As String)
+    On Error Resume Next
+    If Len(filePath) > 0 Then
+        If fso.FileExists(filePath) Then fso.DeleteFile filePath, True
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
 Private Sub CreateZipFromPath(ByVal sourcePath As String, ByVal zipPath As String, Optional ByVal excludeGeneratedPlotFiles As Boolean = True)
     Dim fso As Object
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
-    On Error Resume Next
-    CreateZipWithTar sourcePath, zipPath, excludeGeneratedPlotFiles
-    If Err.Number = 0 Then
-        On Error GoTo 0
-        Exit Sub
-    End If
-    Err.Clear
-
-    CreateZipWithPowerShell sourcePath, zipPath, excludeGeneratedPlotFiles
-    If Err.Number = 0 Then
-        On Error GoTo 0
-        Exit Sub
-    End If
-    Err.Clear
-    On Error GoTo 0
-
-    If CreateZipWithShell(sourcePath, zipPath, excludeGeneratedPlotFiles) Then Exit Sub
-    Err.Raise vbObjectError + 514, "CreateZipFromFolder", "Failed to create zip file: " & zipPath
+    CreateZipWithZipTool sourcePath, zipPath, excludeGeneratedPlotFiles
 End Sub
 
 Private Sub CreateZipWithTar(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
@@ -1932,72 +2358,307 @@ Failed:
     CreateZipWithShell = False
 End Function
 
+Private Sub CreateZipWithZipTool(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
+    Dim fso As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
+
+    RunZipTool "create " & QuoteForCommandLine(sourcePath) & " " & QuoteForCommandLine(zipPath) & " " & ZipToolBoolean(excludeGeneratedPlotFiles), "CreateZipWithZipTool"
+
+    If Dir$(zipPath) = vbNullString Then
+        Err.Raise vbObjectError + 513, "CreateZipWithZipTool", "Zip tool did not create zip file: " & zipPath
+    End If
+End Sub
+
+Private Sub RunZipTool(ByVal arguments As String, ByVal errorSource As String)
+    Dim fso As Object
+    Dim wsh As Object
+    Dim toolPath As String
+    Dim command As String
+    Dim exitCode As Long
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    toolPath = GetZipToolPath(fso)
+    command = QuoteForCommandLine(toolPath) & " " & arguments
+
+    Set wsh = CreateObject("WScript.Shell")
+    exitCode = wsh.Run(command, 0, True)
+    If exitCode <> 0 Then
+        Err.Raise vbObjectError + 562, errorSource, "FigurePackageZipTool failed with exit code " & exitCode & ": " & command
+    End If
+End Sub
+
+Private Function GetZipToolPath(ByVal fso As Object) As String
+    Dim envPath As String
+    Dim candidatePath As String
+
+    envPath = Trim$(Environ$("OLE_RAW_DATA_ZIP_TOOL"))
+    If Len(envPath) > 0 Then
+        If fso.FileExists(envPath) Then
+            GetZipToolPath = envPath
+            Exit Function
+        End If
+    End If
+
+    candidatePath = fso.BuildPath(Application.StartupPath, "FigurePackageZipTool.exe")
+    If fso.FileExists(candidatePath) Then
+        GetZipToolPath = candidatePath
+        Exit Function
+    End If
+
+    On Error Resume Next
+    candidatePath = fso.BuildPath(ThisDocument.Path, "FigurePackageZipTool.exe")
+    If Err.Number = 0 Then
+        If fso.FileExists(candidatePath) Then
+            GetZipToolPath = candidatePath
+            On Error GoTo 0
+            Exit Function
+        End If
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    Err.Raise vbObjectError + 563, "GetZipToolPath", "Could not find FigurePackageZipTool.exe. Reinstall the add-in."
+End Function
+
+Private Function ZipToolBoolean(ByVal value As Boolean) As String
+    If value Then
+        ZipToolBoolean = "true"
+    Else
+        ZipToolBoolean = "false"
+    End If
+End Function
+
 Private Sub CreateZipWithPowerShell(ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
     Dim fso As Object
     Dim wsh As Object
     Dim command As String
     Dim scriptPath As String
+    Dim logPath As String
     Dim exitCode As Long
+    Dim stage As String
 
+    On Error GoTo Failed
+
+    stage = "prepare zip script"
     Set fso = CreateObject("Scripting.FileSystemObject")
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
-    scriptPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterZip.ps1")
+    scriptPath = BuildTempFilePath(fso, "OleRawDataInserterZip", ".ps1")
+    logPath = BuildTempFilePath(fso, "OleRawDataInserterZip", ".log")
     WriteZipScript scriptPath, sourcePath, zipPath, excludeGeneratedPlotFiles
 
+    stage = "run zip script"
     Set wsh = CreateObject("WScript.Shell")
-    command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File " & QuoteForCommandLine(scriptPath)
+    command = BuildPowerShellScriptCommand(scriptPath, logPath)
     exitCode = wsh.Run(command, 0, True)
 
+    stage = "check zip script result"
     If exitCode <> 0 Then
-        Err.Raise vbObjectError + 512, "CreateZipWithPowerShell", "PowerShell Compress-Archive failed with exit code " & exitCode
+        Err.Raise vbObjectError + 512, "CreateZipWithPowerShell", "PowerShell ZipArchive failed with exit code " & exitCode & ". Script kept at: " & scriptPath & ". Log: " & ReadFailureLogIfExists(logPath)
     End If
 
     If Dir$(zipPath) = vbNullString Then
         Err.Raise vbObjectError + 513, "CreateZipWithPowerShell", "PowerShell did not create zip file: " & zipPath
     End If
+    DeleteFileIfExists fso, scriptPath
+    DeleteFileIfExists fso, logPath
+    Exit Sub
+
+Failed:
+    Err.Raise Err.Number, "CreateZipWithPowerShell", stage & ": " & Err.Description
 End Sub
 
 Private Function PowerShellQuote(ByVal value As String) As String
     PowerShellQuote = "'" & Replace(value, "'", "''") & "'"
 End Function
 
+Private Function PowerShellBoolean(ByVal value As Boolean) As String
+    If value Then
+        PowerShellBoolean = "$true"
+    Else
+        PowerShellBoolean = "$false"
+    End If
+End Function
+
 Private Function QuoteForCommandLine(ByVal value As String) As String
     QuoteForCommandLine = Chr$(34) & Replace(value, Chr$(34), Chr$(34) & Chr$(34)) & Chr$(34)
 End Function
 
-Private Sub WriteZipScript(ByVal scriptPath As String, ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
-    Dim fileNum As Integer
-    Dim scriptText As String
+Private Function BuildPowerShellScriptCommand(ByVal scriptPath As String, Optional ByVal logPath As String = vbNullString) As String
+    BuildPowerShellScriptCommand = "cmd.exe /c powershell.exe -NoProfile -ExecutionPolicy Bypass -File " & QuoteForCommandLine(scriptPath)
+    If Len(logPath) > 0 Then BuildPowerShellScriptCommand = BuildPowerShellScriptCommand & " > " & QuoteForCommandLine(logPath) & " 2>&1"
+End Function
 
-    scriptText = _
-        "$ErrorActionPreference = 'Stop'" & vbCrLf & _
-        "$source = Get-Item -LiteralPath " & PowerShellQuote(sourcePath) & " -Force" & vbCrLf & _
-        "$destination = " & PowerShellQuote(zipPath) & vbCrLf & _
-        "if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Force }" & vbCrLf & _
-        "if ($source.PSIsContainer) {" & vbCrLf
+Private Function ReadFailureLogIfExists(ByVal logPath As String) As String
+    Dim fso As Object
+    Dim fileHandle As Object
 
-    If excludeGeneratedPlotFiles Then
-        scriptText = scriptText & _
-            "    $generated = @('plot.png', 'plot.svg', 'plot.pdf')" & vbCrLf & _
-            "    $items = Get-ChildItem -LiteralPath $source.FullName -Force | Where-Object { $generated -notcontains $_.Name.ToLowerInvariant() }" & vbCrLf
-    Else
-        scriptText = scriptText & _
-            "    $items = Get-ChildItem -LiteralPath $source.FullName -Force" & vbCrLf
+    On Error Resume Next
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Len(logPath) = 0 Or Not fso.FileExists(logPath) Then
+        ReadFailureLogIfExists = logPath
+        Exit Function
     End If
 
-    scriptText = scriptText & _
-        "    if (-not $items) { throw 'Source folder is empty.' }" & vbCrLf & _
-        "    Compress-Archive -Path $items.FullName -DestinationPath $destination -Force" & vbCrLf & _
-        "} else {" & vbCrLf & _
-        "    Compress-Archive -LiteralPath $source.FullName -DestinationPath $destination -Force" & vbCrLf & _
-        "}"
+    Set fileHandle = fso.OpenTextFile(logPath, 1, False)
+    ReadFailureLogIfExists = logPath & " " & Left$(fileHandle.ReadAll, 500)
+    fileHandle.Close
+    Err.Clear
+    On Error GoTo 0
+End Function
 
-    fileNum = FreeFile
-    Open scriptPath For Output As #fileNum
-    Print #fileNum, scriptText
-    Close #fileNum
+Private Sub AddScriptLine(ByRef scriptText As String, ByVal lineText As String)
+    If Len(scriptText) > 0 Then scriptText = scriptText & vbCrLf
+    scriptText = scriptText & lineText
 End Sub
+
+Private Sub WriteZipScript(ByVal scriptPath As String, ByVal sourcePath As String, ByVal zipPath As String, ByVal excludeGeneratedPlotFiles As Boolean)
+    Dim scriptText As String
+
+    AddScriptLine scriptText, "$ErrorActionPreference = 'Stop'"
+    AddScriptLine scriptText, "Add-Type -AssemblyName System.IO.Compression"
+    AddScriptLine scriptText, "Add-Type -AssemblyName System.IO.Compression.FileSystem"
+    AddScriptLine scriptText, "$sourcePath = " & PowerShellQuote(sourcePath)
+    AddScriptLine scriptText, "$destination = " & PowerShellQuote(zipPath)
+    AddScriptLine scriptText, "$excludeGenerated = " & PowerShellBoolean(excludeGeneratedPlotFiles)
+    AddScriptLine scriptText, "$utf8 = [System.Text.Encoding]::UTF8"
+    AddScriptLine scriptText, "$generated = @('plot.png', 'plot.svg', 'plot.pdf')"
+    AddScriptLine scriptText, "$source = Get-Item -LiteralPath $sourcePath -Force"
+    AddScriptLine scriptText, "$destinationFolder = [System.IO.Path]::GetDirectoryName($destination)"
+    AddScriptLine scriptText, "if ($destinationFolder -and -not (Test-Path -LiteralPath $destinationFolder)) { New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null }"
+    AddScriptLine scriptText, "if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Force }"
+    AddScriptLine scriptText, "function Get-ZipEntryName([string]$fullName, [string]$root) {"
+    AddScriptLine scriptText, "    $relative = $fullName.Substring($root.Length).TrimStart([char[]]@('\', '/'))"
+    AddScriptLine scriptText, "    return $relative.Replace('\', '/')"
+    AddScriptLine scriptText, "}"
+    AddScriptLine scriptText, "function Add-EntryFile($archive, $file, [string]$entryName) {"
+    AddScriptLine scriptText, "    if ([string]::IsNullOrWhiteSpace($entryName)) { return }"
+    AddScriptLine scriptText, "    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null"
+    AddScriptLine scriptText, "}"
+    AddScriptLine scriptText, "function Add-EmptyDirectoryEntry($archive, [string]$entryName) {"
+    AddScriptLine scriptText, "    if ([string]::IsNullOrWhiteSpace($entryName)) { return }"
+    AddScriptLine scriptText, "    if (-not $entryName.EndsWith('/')) { $entryName = $entryName + '/' }"
+    AddScriptLine scriptText, "    $archive.CreateEntry($entryName) | Out-Null"
+    AddScriptLine scriptText, "}"
+    AddScriptLine scriptText, "$stream = [System.IO.File]::Open($destination, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)"
+    AddScriptLine scriptText, "try {"
+    AddScriptLine scriptText, "    $archive = [System.IO.Compression.ZipArchive]::new($stream, [System.IO.Compression.ZipArchiveMode]::Create, $false, $utf8)"
+    AddScriptLine scriptText, "    try {"
+    AddScriptLine scriptText, "        if ($source.PSIsContainer) {"
+    AddScriptLine scriptText, "            $root = $source.FullName.TrimEnd([char[]]@('\', '/')) + [System.IO.Path]::DirectorySeparatorChar"
+    AddScriptLine scriptText, "            foreach ($file in Get-ChildItem -LiteralPath $source.FullName -Force -File -Recurse) {"
+    AddScriptLine scriptText, "                if ($excludeGenerated -and $file.DirectoryName.TrimEnd([char[]]@('\', '/')).Equals($source.FullName.TrimEnd([char[]]@('\', '/')), [System.StringComparison]::OrdinalIgnoreCase) -and ($generated -contains $file.Name.ToLowerInvariant())) { continue }"
+    AddScriptLine scriptText, "                Add-EntryFile $archive $file (Get-ZipEntryName $file.FullName $root)"
+    AddScriptLine scriptText, "            }"
+    AddScriptLine scriptText, "            foreach ($directory in Get-ChildItem -LiteralPath $source.FullName -Force -Directory -Recurse) {"
+    AddScriptLine scriptText, "                $children = @(Get-ChildItem -LiteralPath $directory.FullName -Force)"
+    AddScriptLine scriptText, "                if ($children.Count -eq 0) { Add-EmptyDirectoryEntry $archive (Get-ZipEntryName $directory.FullName $root) }"
+    AddScriptLine scriptText, "            }"
+    AddScriptLine scriptText, "        } else {"
+    AddScriptLine scriptText, "            Add-EntryFile $archive $source $source.Name"
+    AddScriptLine scriptText, "        }"
+    AddScriptLine scriptText, "    } finally {"
+    AddScriptLine scriptText, "        $archive.Dispose()"
+    AddScriptLine scriptText, "    }"
+    AddScriptLine scriptText, "} finally {"
+    AddScriptLine scriptText, "    $stream.Dispose()"
+    AddScriptLine scriptText, "}"
+
+    WriteUtf8TextFile scriptPath, scriptText
+End Sub
+
+Private Sub WriteZipListScript(ByVal scriptPath As String, ByVal zipPath As String, ByVal listPath As String)
+    Dim scriptText As String
+
+    AddScriptLine scriptText, "$ErrorActionPreference = 'Stop'"
+    AddScriptLine scriptText, "Add-Type -AssemblyName System.IO.Compression"
+    AddScriptLine scriptText, "$zipPath = " & PowerShellQuote(zipPath)
+    AddScriptLine scriptText, "$listPath = " & PowerShellQuote(listPath)
+    AddScriptLine scriptText, "$utf8 = [System.Text.Encoding]::UTF8"
+    AddScriptLine scriptText, "$stream = [System.IO.File]::Open($zipPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)"
+    AddScriptLine scriptText, "try {"
+    AddScriptLine scriptText, "    $archive = [System.IO.Compression.ZipArchive]::new($stream, [System.IO.Compression.ZipArchiveMode]::Read, $false, $utf8)"
+    AddScriptLine scriptText, "    try {"
+    AddScriptLine scriptText, "        $entries = @($archive.Entries | ForEach-Object { $_.FullName })"
+    AddScriptLine scriptText, "    } finally {"
+    AddScriptLine scriptText, "        $archive.Dispose()"
+    AddScriptLine scriptText, "    }"
+    AddScriptLine scriptText, "} finally {"
+    AddScriptLine scriptText, "    $stream.Dispose()"
+    AddScriptLine scriptText, "}"
+    AddScriptLine scriptText, "[System.IO.File]::WriteAllLines($listPath, [string[]]$entries, $utf8)"
+
+    WriteUtf8TextFile scriptPath, scriptText
+End Sub
+
+Private Sub WriteZipExtractScript(ByVal scriptPath As String, ByVal zipPath As String, ByVal targetFolder As String)
+    Dim scriptText As String
+
+    AddScriptLine scriptText, "$ErrorActionPreference = 'Stop'"
+    AddScriptLine scriptText, "Add-Type -AssemblyName System.IO.Compression"
+    AddScriptLine scriptText, "Add-Type -AssemblyName System.IO.Compression.FileSystem"
+    AddScriptLine scriptText, "$zipPath = " & PowerShellQuote(zipPath)
+    AddScriptLine scriptText, "$targetFolder = " & PowerShellQuote(targetFolder)
+    AddScriptLine scriptText, "$utf8 = [System.Text.Encoding]::UTF8"
+    AddScriptLine scriptText, "[System.IO.Directory]::CreateDirectory($targetFolder) | Out-Null"
+    AddScriptLine scriptText, "$root = [System.IO.Path]::GetFullPath($targetFolder).TrimEnd([char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar))"
+    AddScriptLine scriptText, "$rootPrefix = $root + [System.IO.Path]::DirectorySeparatorChar"
+    AddScriptLine scriptText, "$stream = [System.IO.File]::Open($zipPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)"
+    AddScriptLine scriptText, "try {"
+    AddScriptLine scriptText, "    $archive = [System.IO.Compression.ZipArchive]::new($stream, [System.IO.Compression.ZipArchiveMode]::Read, $false, $utf8)"
+    AddScriptLine scriptText, "    try {"
+    AddScriptLine scriptText, "        foreach ($entry in $archive.Entries) {"
+    AddScriptLine scriptText, "            $entryName = $entry.FullName.Replace('\', '/')"
+    AddScriptLine scriptText, "            if ([string]::IsNullOrWhiteSpace($entryName)) { continue }"
+    AddScriptLine scriptText, "            if ($entryName.StartsWith('/') -or $entryName.Contains(':')) { throw ('Unsafe zip entry name: ' + $entry.FullName) }"
+    AddScriptLine scriptText, "            $relativePath = $entryName.Replace('/', [System.IO.Path]::DirectorySeparatorChar)"
+    AddScriptLine scriptText, "            $targetPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($root, $relativePath))"
+    AddScriptLine scriptText, "            if (-not $targetPath.Equals($root, [System.StringComparison]::OrdinalIgnoreCase) -and -not $targetPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { throw ('Unsafe zip entry path: ' + $entry.FullName) }"
+    AddScriptLine scriptText, "            if ($entryName.EndsWith('/')) {"
+    AddScriptLine scriptText, "                [System.IO.Directory]::CreateDirectory($targetPath) | Out-Null"
+    AddScriptLine scriptText, "            } else {"
+    AddScriptLine scriptText, "                $parent = [System.IO.Path]::GetDirectoryName($targetPath)"
+    AddScriptLine scriptText, "                if ($parent) { [System.IO.Directory]::CreateDirectory($parent) | Out-Null }"
+    AddScriptLine scriptText, "                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true)"
+    AddScriptLine scriptText, "            }"
+    AddScriptLine scriptText, "        }"
+    AddScriptLine scriptText, "    } finally {"
+    AddScriptLine scriptText, "        $archive.Dispose()"
+    AddScriptLine scriptText, "    }"
+    AddScriptLine scriptText, "} finally {"
+    AddScriptLine scriptText, "    $stream.Dispose()"
+    AddScriptLine scriptText, "}"
+
+    WriteUtf8TextFile scriptPath, scriptText
+End Sub
+
+Private Sub WriteUtf8TextFile(ByVal filePath As String, ByVal text As String)
+    Dim stream As Object
+
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 2
+    stream.Charset = "utf-8"
+    stream.Open
+    stream.WriteText text
+    stream.SaveToFile filePath, 2
+    stream.Close
+    Set stream = Nothing
+End Sub
+
+Private Function ReadUtf8TextFile(ByVal filePath As String) As String
+    Dim stream As Object
+
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 2
+    stream.Charset = "utf-8"
+    stream.Open
+    stream.LoadFromFile filePath
+    ReadUtf8TextFile = stream.ReadText(-1)
+    stream.Close
+    Set stream = Nothing
+End Function
 
 Private Function IsGeneratedPlotFile(ByVal fileName As String) As Boolean
     Select Case LCase$(fileName)

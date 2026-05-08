@@ -1,10 +1,10 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} ImageSupportFilesDialog 
-   Caption         =   "Insert Image + Support Files"
-   ClientHeight    =   5436
+   Caption         =   "Insert Image + Package Folder"
+   ClientHeight    =   5940
    ClientLeft      =   108
    ClientTop       =   456
-   ClientWidth     =   8664.001
+   ClientWidth     =   9000
    OleObjectBlob   =   "ImageSupportFilesDialog.frx":0000
    StartUpPosition =   1  '所有者中心
 End
@@ -14,10 +14,9 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 
+
 Option Explicit
 
-Private Const EMBEDDED_PREFIX As String = "[embedded] "
-Private Const NEW_PREFIX As String = "[new] "
 Private attachToSelectedImage As Boolean
 Private manageExistingOle As Boolean
 Private targetInlineImage As Object
@@ -25,11 +24,18 @@ Private targetFloatingImage As Object
 Private targetInlineOle As Object
 Private targetFloatingOle As Object
 Private existingZipPath As String
+Private existingDisplayImagePath As String
+Private workingFolderPath As String
+Private openedWorkingFolder As Boolean
+
+Private Const DIALOG_WIDTH As Single = 500
+Private Const DIALOG_HEIGHT As Single = 330
 
 Public Sub ConfigureForSelectedInlineImage(ByVal inlineImage As Object)
     attachToSelectedImage = True
     manageExistingOle = False
     Set targetInlineImage = inlineImage
+    PrepareEmptyWorkingFolder "selected_image_support"
     ConfigureForSelectedImageMode
 End Sub
 
@@ -37,6 +43,7 @@ Public Sub ConfigureForSelectedFloatingImage(ByVal floatingImage As Object)
     attachToSelectedImage = True
     manageExistingOle = False
     Set targetFloatingImage = floatingImage
+    PrepareEmptyWorkingFolder "selected_image_support"
     ConfigureForSelectedImageMode
 End Sub
 
@@ -44,22 +51,29 @@ Public Sub ConfigureForSelectedInlineOle(ByVal inlineOle As Object)
     attachToSelectedImage = False
     manageExistingOle = True
     Set targetInlineOle = inlineOle
+    existingDisplayImagePath = ExtractDisplayImageFromInlineOleObject(inlineOle)
     existingZipPath = ExtractZipFromInlineOleObject(inlineOle)
+    PrepareWorkingFolderFromExistingZip existingZipPath, "selected_ole_support"
     ConfigureForSelectedOleMode
-    LoadEmbeddedEntries existingZipPath
 End Sub
 
 Public Sub ConfigureForSelectedFloatingOle(ByVal floatingOle As Object)
     attachToSelectedImage = False
     manageExistingOle = True
     Set targetFloatingOle = floatingOle
+    existingDisplayImagePath = ExtractDisplayImageFromFloatingOleObject(targetFloatingOle)
     existingZipPath = ExtractZipFromFloatingOleObject(targetFloatingOle)
+    PrepareWorkingFolderFromExistingZip existingZipPath, "selected_ole_support"
     ConfigureForSelectedOleMode
-    LoadEmbeddedEntries existingZipPath
 End Sub
 
 Private Sub UserForm_Initialize()
+    ConfigureSystemFileManagerControls
     UpdateDialogState
+End Sub
+
+Private Sub UserForm_Activate()
+    EnsureWorkingFolder
 End Sub
 
 Private Sub cmdBrowseImage_Click()
@@ -79,55 +93,33 @@ Private Sub cmdBrowseImage_Click()
 End Sub
 
 Private Sub cmdAddFiles_Click()
-    Dim i As Long
-
-    With Application.FileDialog(msoFileDialogFilePicker)
-        .Title = "Choose support files to embed"
-        .AllowMultiSelect = True
-        .Filters.Clear
-        .Filters.Add "All files", "*.*"
-        If .Show = -1 Then
-            For i = 1 To .SelectedItems.Count
-                AddSupportPathIfMissing CStr(.SelectedItems(i))
-            Next i
-        End If
-    End With
-
-    UpdateDialogState
+    EnsureWorkingFolder
+    OpenWorkingFolder
 End Sub
 
 Private Sub cmdAddFolder_Click()
-    With Application.FileDialog(msoFileDialogFolderPicker)
-        .Title = "Choose a support folder to embed"
-        .AllowMultiSelect = False
-        If .Show = -1 Then AddSupportPathIfMissing CStr(.SelectedItems(1))
-    End With
-
-    UpdateDialogState
+    EnsureWorkingFolder
+    OpenWorkingFolder
 End Sub
 
 Private Sub cmdRemoveSelected_Click()
-    Dim i As Long
-
-    For i = lstSupportFiles.ListCount - 1 To 0 Step -1
-        If lstSupportFiles.Selected(i) Then lstSupportFiles.RemoveItem i
-    Next i
-
-    UpdateDialogState
+    EnsureWorkingFolder
+    OpenWorkingFolder
 End Sub
 
 Private Sub cmdClearFiles_Click()
-    lstSupportFiles.Clear
+    EnsureWorkingFolder
+    If MsgBox("Clear all files from the package contents folder?", vbQuestion + vbYesNo) = vbYes Then
+        ClearWorkingFolder
+        OpenWorkingFolder
+    End If
     UpdateDialogState
 End Sub
 
 Private Sub cmdInsert_Click()
-    Dim supportFiles As Collection
-    Dim keepEntries As Collection
-    Dim newFiles As Collection
     Dim imagePath As String
-    Dim itemText As String
-    Dim i As Long
+
+    EnsureWorkingFolder
 
     If Not attachToSelectedImage And Not manageExistingOle Then
         imagePath = Trim$(txtImagePath.Text)
@@ -142,53 +134,34 @@ Private Sub cmdInsert_Click()
         End If
     End If
 
-    If lstSupportFiles.ListCount = 0 And Not manageExistingOle Then
-        MsgBox "Please add at least one support file or folder.", vbExclamation
-        Exit Sub
+    If Not manageExistingOle Then
+        If Not WorkingFolderHasAnyFiles Then
+            MsgBox "Please put at least one support file or folder into the package contents folder.", vbExclamation
+            OpenWorkingFolder
+            Exit Sub
+        End If
     End If
 
     If manageExistingOle Then
-        Set keepEntries = New Collection
-        Set newFiles = New Collection
-        For i = 0 To lstSupportFiles.ListCount - 1
-            itemText = CStr(lstSupportFiles.List(i))
-            If Left$(itemText, Len(EMBEDDED_PREFIX)) = EMBEDDED_PREFIX Then
-                keepEntries.Add Mid$(itemText, Len(EMBEDDED_PREFIX) + 1)
-            ElseIf Left$(itemText, Len(NEW_PREFIX)) = NEW_PREFIX Then
-                newFiles.Add Mid$(itemText, Len(NEW_PREFIX) + 1)
-            Else
-                newFiles.Add itemText
-            End If
-        Next i
-
         If Not targetInlineOle Is Nothing Then
-            ManageFilesInInlineOle targetInlineOle, existingZipPath, keepEntries, newFiles
+            ManageWorkingFolderInInlineOle targetInlineOle, workingFolderPath, existingDisplayImagePath
         ElseIf Not targetFloatingOle Is Nothing Then
-            ManageFilesInFloatingOle targetFloatingOle, existingZipPath, keepEntries, newFiles
+            ManageWorkingFolderInFloatingOle targetFloatingOle, workingFolderPath, existingDisplayImagePath
         Else
             MsgBox "The selected OLE object is no longer available.", vbExclamation
             Exit Sub
         End If
     ElseIf attachToSelectedImage Then
-        Set supportFiles = New Collection
-        For i = 0 To lstSupportFiles.ListCount - 1
-            supportFiles.Add CStr(lstSupportFiles.List(i))
-        Next i
-
         If Not targetInlineImage Is Nothing Then
-            AttachSupportFilesToInlineImage targetInlineImage, supportFiles
+            AttachWorkingFolderToInlineImage targetInlineImage, workingFolderPath
         ElseIf Not targetFloatingImage Is Nothing Then
-            AttachSupportFilesToFloatingImage targetFloatingImage, supportFiles
+            AttachWorkingFolderToFloatingImage targetFloatingImage, workingFolderPath
         Else
             MsgBox "The selected image is no longer available.", vbExclamation
             Exit Sub
         End If
     Else
-        Set supportFiles = New Collection
-        For i = 0 To lstSupportFiles.ListCount - 1
-            supportFiles.Add CStr(lstSupportFiles.List(i))
-        Next i
-        InsertImageAndSupportFilesAsOle imagePath, supportFiles
+        InsertImageAndWorkingFolderAsOle imagePath, workingFolderPath
     End If
 
     Unload Me
@@ -202,27 +175,92 @@ Private Sub txtImagePath_Change()
     UpdateDialogState
 End Sub
 
+Private Sub ConfigureSystemFileManagerControls()
+    Me.Width = DIALOG_WIDTH
+    Me.Height = DIALOG_HEIGHT
 
-Private Sub AddSupportPathIfMissing(ByVal supportPath As String)
-    Dim i As Long
-    Dim displayText As String
+    Caption = "Insert Image + Package Folder"
+    lblIntro.Caption = "1. Choose the display image. 2. Click Open Folder... and edit the package contents in Windows Explorer. 3. Return here and click Insert."
+    lblIntro.Left = 18
+    lblIntro.Top = 15
+    lblIntro.Width = 444
+    lblIntro.Height = 42
+    lblIntro.WordWrap = True
 
-    If manageExistingOle Then
-        displayText = NEW_PREFIX & supportPath
-    Else
-        displayText = supportPath
-    End If
+    lblImage.Caption = "Display image"
+    lblImage.Left = 18
+    lblImage.Top = 66
+    lblImage.Width = 180
+    lblImage.Height = 12
 
-    For i = 0 To lstSupportFiles.ListCount - 1
-        If LCase$(CStr(lstSupportFiles.List(i))) = LCase$(displayText) Then Exit Sub
-    Next i
+    txtImagePath.Left = 18
+    txtImagePath.Top = 84
+    txtImagePath.Width = 342
+    txtImagePath.Height = 18
+    txtImagePath.Enabled = True
 
-    lstSupportFiles.AddItem displayText
+    cmdBrowseImage.Caption = "Choose image..."
+    cmdBrowseImage.Left = 372
+    cmdBrowseImage.Top = 83
+    cmdBrowseImage.Width = 90
+    cmdBrowseImage.Height = 21
+    cmdBrowseImage.Enabled = True
+
+    lblSupportFiles.Caption = "Package folder"
+    lblSupportFiles.Left = 18
+    lblSupportFiles.Top = 122
+    lblSupportFiles.Width = 180
+    lblSupportFiles.Height = 12
+
+    lstSupportFiles.Visible = False
+    lstSupportFiles.Left = 18
+    lstSupportFiles.Top = 144
+    lstSupportFiles.Width = 444
+    lstSupportFiles.Height = 18
+
+    cmdAddFiles.Caption = "Open Folder..."
+    cmdAddFiles.Visible = True
+    cmdAddFiles.Left = 18
+    cmdAddFiles.Top = 144
+    cmdAddFiles.Width = 108
+    cmdAddFiles.Height = 24
+
+    cmdAddFolder.Visible = False
+    cmdRemoveSelected.Visible = False
+
+    cmdClearFiles.Caption = "Clear Folder"
+    cmdClearFiles.Visible = True
+    cmdClearFiles.Left = 138
+    cmdClearFiles.Top = 144
+    cmdClearFiles.Width = 90
+    cmdClearFiles.Height = 24
+
+    lblSummary.Left = 18
+    lblSummary.Top = 186
+    lblSummary.Width = 444
+    lblSummary.Height = 54
+    lblSummary.WordWrap = True
+    lblSummary.BackStyle = 1
+    lblSummary.BackColor = RGB(248, 248, 248)
+    lblSummary.BorderStyle = 1
+
+    cmdInsert.Caption = "Insert"
+    cmdInsert.Left = 324
+    cmdInsert.Top = 258
+    cmdInsert.Width = 66
+    cmdInsert.Height = 24
+    cmdInsert.Default = True
+
+    cmdCancel.Left = 402
+    cmdCancel.Top = 258
+    cmdCancel.Width = 60
+    cmdCancel.Height = 24
+    cmdCancel.Cancel = True
 End Sub
 
 Private Sub ConfigureForSelectedImageMode()
-    Caption = "Attach Files/Folders to Selected Image"
-    lblIntro.Caption = "Review the support files and folders before attaching them to the selected image. The selected image will be replaced by an OLE object while keeping its size and position."
+    Caption = "Attach Package to Selected Image"
+    lblIntro.Caption = "Click Open Folder..., add files/folders in Windows Explorer, then return here and click Insert. The selected image keeps its size and position."
     lblImage.Caption = "Selected image in current document"
     txtImagePath.Text = "Selected image in current document"
     txtImagePath.Enabled = False
@@ -231,51 +269,190 @@ Private Sub ConfigureForSelectedImageMode()
 End Sub
 
 Private Sub ConfigureForSelectedOleMode()
-    Caption = "Manage Files/Folders in Selected OLE Object"
-    lblIntro.Caption = "Review the files already embedded in the selected OLE object. Remove rows to delete files, or add new files/folders, then click Insert to rebuild the OLE object while keeping its display, size, and position."
+    Caption = "Manage Selected OLE Package"
+    lblIntro.Caption = "Click Open Folder..., edit the unpacked package in Windows Explorer, then return here and click Rebuild."
     lblImage.Caption = "Selected OLE object in current document"
     txtImagePath.Text = "Selected OLE object in current document"
     txtImagePath.Enabled = False
     cmdBrowseImage.Enabled = False
+    cmdInsert.Caption = "Rebuild"
     UpdateDialogState
 End Sub
 
-Private Sub LoadEmbeddedEntries(ByVal zipPath As String)
-    Dim entries As Collection
-    Dim entryName As Variant
+Private Sub EnsureWorkingFolder()
+    If Len(workingFolderPath) = 0 Then
+        PrepareEmptyWorkingFolder "image_support"
+    End If
+End Sub
 
-    Set entries = GetZipEntryNames(zipPath)
-    lstSupportFiles.Clear
-    For Each entryName In entries
-        lstSupportFiles.AddItem EMBEDDED_PREFIX & CStr(entryName)
-    Next entryName
+Private Sub PrepareEmptyWorkingFolder(ByVal baseName As String)
+    Dim fso As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    workingFolderPath = BuildDialogWorkingFolderPath(fso, baseName)
+    fso.CreateFolder workingFolderPath
+    openedWorkingFolder = False
     UpdateDialogState
 End Sub
+
+Private Sub PrepareWorkingFolderFromExistingZip(ByVal zipPath As String, ByVal baseName As String)
+    Dim fso As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    workingFolderPath = BuildDialogWorkingFolderPath(fso, baseName)
+    ExtractZipToWorkingFolder zipPath, workingFolderPath
+    openedWorkingFolder = False
+    UpdateDialogState
+End Sub
+
+Private Function BuildDialogWorkingFolderPath(ByVal fso As Object, ByVal baseName As String) As String
+    Dim rootPath As String
+    Dim candidatePath As String
+    Dim index As Long
+
+    rootPath = fso.BuildPath(GetDialogTempFolderPath(fso), "OleRawDataInserter_Work_" & SanitizeDialogFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss"))
+    candidatePath = rootPath
+    index = 2
+    Do While fso.FolderExists(candidatePath)
+        candidatePath = rootPath & "_" & CStr(index)
+        index = index + 1
+    Loop
+
+    BuildDialogWorkingFolderPath = candidatePath
+End Function
+
+Private Function GetDialogTempFolderPath(ByVal fso As Object) As String
+    Dim tempPath As String
+
+    tempPath = Environ$("LOCALAPPDATA")
+    If Len(tempPath) > 0 Then
+        tempPath = fso.BuildPath(tempPath, "Temp")
+    Else
+        tempPath = Environ$("TEMP")
+    End If
+
+    GetDialogTempFolderPath = tempPath
+End Function
+
+Private Function SanitizeDialogFileName(ByVal value As String) As String
+    Dim invalidChars As String
+    Dim i As Long
+    Dim ch As String
+
+    invalidChars = "\/:*?""<>|"
+    SanitizeDialogFileName = Trim$(value)
+    If Len(SanitizeDialogFileName) = 0 Then
+        SanitizeDialogFileName = "package"
+    End If
+
+    For i = 1 To Len(invalidChars)
+        ch = Mid$(invalidChars, i, 1)
+        SanitizeDialogFileName = Replace(SanitizeDialogFileName, ch, "_")
+    Next i
+End Function
+
+Private Sub OpenWorkingFolder()
+    Dim fso As Object
+    Dim wsh As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Len(workingFolderPath) = 0 Or Not fso.FolderExists(workingFolderPath) Then
+        PrepareEmptyWorkingFolder "image_support"
+    End If
+
+    Set wsh = CreateObject("WScript.Shell")
+    wsh.Run "explorer.exe " & QuoteDialogCommandLine(workingFolderPath), 1, False
+    openedWorkingFolder = True
+    UpdateDialogState
+End Sub
+
+Private Sub ClearWorkingFolder()
+    Dim fso As Object
+    Dim folder As Object
+    Dim fileItem As Object
+    Dim subFolder As Object
+    Dim pathsToDelete As Collection
+    Dim item As Variant
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Len(workingFolderPath) = 0 Or Not fso.FolderExists(workingFolderPath) Then
+        Exit Sub
+    End If
+
+    Set pathsToDelete = New Collection
+    Set folder = fso.GetFolder(workingFolderPath)
+    For Each fileItem In folder.Files
+        pathsToDelete.Add CStr(fileItem.Path)
+    Next fileItem
+    For Each subFolder In folder.SubFolders
+        pathsToDelete.Add CStr(subFolder.Path)
+    Next subFolder
+
+    For Each item In pathsToDelete
+        If fso.FileExists(CStr(item)) Then
+            fso.DeleteFile CStr(item), True
+        ElseIf fso.FolderExists(CStr(item)) Then
+            fso.DeleteFolder CStr(item), True
+        End If
+    Next item
+End Sub
+
+Private Function WorkingFolderHasAnyFiles() As Boolean
+    Dim fso As Object
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Len(workingFolderPath) = 0 Then
+        Exit Function
+    End If
+    If Not fso.FolderExists(workingFolderPath) Then
+        Exit Function
+    End If
+    WorkingFolderHasAnyFiles = DialogFolderHasAnyFiles(fso.GetFolder(workingFolderPath))
+End Function
+
+Private Function DialogFolderHasAnyFiles(ByVal folder As Object) As Boolean
+    Dim subFolder As Object
+
+    If folder.Files.Count > 0 Then
+        DialogFolderHasAnyFiles = True
+        Exit Function
+    End If
+
+    For Each subFolder In folder.SubFolders
+        If DialogFolderHasAnyFiles(subFolder) Then
+            DialogFolderHasAnyFiles = True
+            Exit Function
+        End If
+    Next subFolder
+End Function
+
+Private Function QuoteDialogCommandLine(ByVal value As String) As String
+    QuoteDialogCommandLine = Chr$(34) & Replace(value, Chr$(34), Chr$(34) & Chr$(34)) & Chr$(34)
+End Function
 
 Private Sub UpdateDialogState()
     Dim hasImage As Boolean
+    Dim folderText As String
+    Dim actionText As String
 
     hasImage = attachToSelectedImage Or manageExistingOle Or Len(Trim$(txtImagePath.Text)) > 0
-    lblSupportFiles.Caption = "Support files/folders (" & CStr(lstSupportFiles.ListCount) & " selected)"
-    cmdInsert.Enabled = (hasImage And (manageExistingOle Or lstSupportFiles.ListCount > 0))
+    cmdInsert.Enabled = hasImage
 
-    If cmdInsert.Enabled Then
-        If manageExistingOle Then
-            lblSummary.Caption = "Ready. Click Insert to rebuild the selected OLE object with the files currently shown in the list."
-        ElseIf attachToSelectedImage Then
-            lblSummary.Caption = "Ready. Click Insert to attach the selected support files/folders while preserving the selected image size and position."
-        Else
-            lblSummary.Caption = "Ready. Click Insert to embed the selected support files/folders and display the chosen image."
-        End If
+    If Len(workingFolderPath) > 0 Then
+        folderText = workingFolderPath
     Else
-        If manageExistingOle Then
-            lblSummary.Caption = "The package can be rebuilt even if the list is empty."
-        ElseIf attachToSelectedImage Then
-            lblSummary.Caption = "Add at least one support file or folder."
-        Else
-            lblSummary.Caption = "Choose an image and at least one support file or folder."
-        End If
+        folderText = "The package folder will be created when this window opens."
     End If
+
+    If manageExistingOle Then
+        actionText = "After editing in Explorer, return here and click Rebuild."
+    ElseIf attachToSelectedImage Then
+        actionText = "After editing in Explorer, return here and click Insert."
+    Else
+        actionText = "After choosing an image and editing in Explorer, return here and click Insert."
+    End If
+
+    lblSummary.Caption = "Package folder:" & vbCrLf & folderText & vbCrLf & actionText
 End Sub
 
 Private Function IsDialogSupportedImage(ByVal imagePath As String) As Boolean
