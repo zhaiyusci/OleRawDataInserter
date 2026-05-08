@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $packageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
 $targetPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
+$zipToolTargetPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
 $logPath = Join-Path $packageRoot 'install.log'
 
 function Write-InstallLog {
@@ -21,14 +22,16 @@ try {
         throw 'Microsoft Word is running.'
     }
 
-    if (Test-Path $targetPath) {
-        Write-InstallLog "Removing add-in: $targetPath"
-        Remove-Item -LiteralPath $targetPath -Force
-        Write-InstallLog 'Uninstall completed successfully.'
+    foreach ($path in @($targetPath, $zipToolTargetPath)) {
+        if (Test-Path $path) {
+            Write-InstallLog "Removing: $path"
+            Remove-Item -LiteralPath $path -Force
+        }
+        else {
+            Write-InstallLog "File is not installed: $path"
+        }
     }
-    else {
-        Write-InstallLog "Add-in is not installed: $targetPath"
-    }
+    Write-InstallLog 'Uninstall completed successfully.'
 }
 catch {
     Write-InstallLog "ERROR: $($_.Exception.Message)"

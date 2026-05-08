@@ -1,11 +1,17 @@
 $ErrorActionPreference = 'Stop'
 
-$addinPath = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP\OleRawDataInserter.dotm'
+$startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
+$installedFiles = @(
+    (Join-Path $startupDir 'OleRawDataInserter.dotm'),
+    (Join-Path $startupDir 'FigurePackageZipTool.exe')
+)
 
-if (Test-Path $addinPath) {
-    Remove-Item -LiteralPath $addinPath -Force
-    "Uninstalled: $addinPath"
-}
-else {
-    "Add-in is not installed: $addinPath"
+foreach ($installedFile in $installedFiles) {
+    if (Test-Path $installedFile) {
+        Remove-Item -LiteralPath $installedFile -Force
+        "Uninstalled: $installedFile"
+    }
+    else {
+        "File is not installed: $installedFile"
+    }
 }

@@ -2,8 +2,10 @@ $ErrorActionPreference = 'Stop'
 
 $packageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $payloadPath = Join-Path $packageRoot 'Payload\OleRawDataInserter.dotm'
+$zipToolPayloadPath = Join-Path $packageRoot 'Payload\FigurePackageZipTool.exe'
 $startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
 $targetPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
+$zipToolTargetPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
 $logPath = Join-Path $packageRoot 'install.log'
 
 function Write-InstallLog {
@@ -19,6 +21,9 @@ try {
     if (-not (Test-Path $payloadPath)) {
         throw "Missing Payload\OleRawDataInserter.dotm. This installer package is incomplete."
     }
+    if (-not (Test-Path $zipToolPayloadPath)) {
+        throw "Missing Payload\FigurePackageZipTool.exe. This installer package is incomplete."
+    }
 
     $wordProcesses = Get-Process WINWORD -ErrorAction SilentlyContinue
     if ($wordProcesses) {
@@ -31,6 +36,8 @@ try {
 
     Write-InstallLog "Installing add-in to: $targetPath"
     Copy-Item -LiteralPath $payloadPath -Destination $targetPath -Force
+    Write-InstallLog "Installing zip helper to: $zipToolTargetPath"
+    Copy-Item -LiteralPath $zipToolPayloadPath -Destination $zipToolTargetPath -Force
 
     Write-InstallLog 'Installation completed successfully.'
 }

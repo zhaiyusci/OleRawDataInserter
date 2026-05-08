@@ -1,25 +1,34 @@
 param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
     [switch]$Install,
-    [switch]$SkipVbomSetup
+    [switch]$SkipVbomSetup,
+    [switch]$CloseWord,
+    [string]$OfficeVersion = ''
 )
+
+# Builds the Word add-in using the same Word automation sequence that has
+# proven reliable on this project:
+#   1. Save a plain .dotm to warm up Word's template save path.
+#   2. Save a second .dotm after importing the VBA modules and UserForms.
+#   3. Quit Word before copying to dist, injecting Ribbon XML, or installing.
+#
+# Keeping all file deployment outside the live Word process avoids locks on
+# Word STARTUP templates and avoids SaveAs2 hangs caused by loaded add-ins.
 
 $ErrorActionPreference = 'Stop'
 
 $srcDir = Join-Path $ProjectRoot 'src'
-$customUiPath = Join-Path $ProjectRoot 'customUI\customUI14.xml'
-$customIcons = @(
-    @{ Id = 'InsertFigurePackageIcon'; File = 'insert-figure-package-icon.png' },
-    @{ Id = 'InsertImageFilesIcon'; File = 'insert-image-files-icon.png' },
-    @{ Id = 'ManageImageOleFilesIcon'; File = 'manage-image-ole-files-icon.png' },
-    @{ Id = 'UsageHelpIcon'; File = 'usage-help-icon.png' }
-)
 $distDir = Join-Path $ProjectRoot 'dist'
 $addinPath = Join-Path $distDir 'OleRawDataInserter.dotm'
-$tempBuildDir = Join-Path $env:TEMP 'OleRawDataInserterBuild'
-$tempAddinPath = Join-Path $tempBuildDir 'OleRawDataInserter.dotm'
+$zipToolPath = Join-Path $distDir 'FigurePackageZipTool.exe'
+$tempBuildDir = Join-Path $env:LOCALAPPDATA 'Temp\OleRawDataInserterBuild'
+$plainAddinPath = Join-Path $tempBuildDir 'PlainSaveTest.dotm'
+$tempAddinPath = Join-Path $tempBuildDir 'VbaSaveTest.dotm'
 $logPath = Join-Path $distDir 'build-word-addin.log'
-$securityKey = 'HKCU:\Software\Microsoft\Office\16.0\Word\Security'
+$startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
+$startupAddinPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
+$startupZipToolPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
+$securityKey = $null
 $valueName = 'AccessVBOM'
 $hadOriginalValue = $false
 $originalValue = $null
@@ -32,135 +41,154 @@ function Write-Step {
     Add-Content -LiteralPath $logPath -Encoding UTF8 -Value $line
 }
 
+function Get-WordOfficeVersion {
+    if (-not [string]::IsNullOrWhiteSpace($OfficeVersion)) {
+        return $OfficeVersion
+    }
+
+    $versionKeys = @()
+    foreach ($root in @('HKCU:\Software\Microsoft\Office', 'HKLM:\Software\Microsoft\Office')) {
+        $versionKeys += @(Get-ChildItem -Path $root -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^\d+\.\d+$' } |
+            Where-Object { Test-Path (Join-Path $_.PSPath 'Word') } |
+            ForEach-Object { $_.PSChildName })
+    }
+
+    $version = $versionKeys |
+        Sort-Object { [version]$_ } -Descending |
+        Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        $version = '16.0'
+    }
+
+    return $version
+}
+
+function Ensure-RegistryKey {
+    param([string]$PowerShellPath)
+
+    if (Test-Path $PowerShellPath) {
+        return
+    }
+
+    $registryPath = $PowerShellPath -replace '^HKCU:\\', 'HKCU\'
+    & reg.exe add $registryPath /f | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $PowerShellPath)) {
+        throw "Could not create registry key: $PowerShellPath"
+    }
+}
+
 function Set-TemporaryVbomAccess {
     if ($SkipVbomSetup) {
         Write-Step 'Skipping AccessVBOM registry setup'
         return
     }
 
-    if (-not (Test-Path $securityKey)) {
-        try {
-            New-Item -Path $securityKey -Force | Out-Null
-        }
-        catch {
-            throw "Cannot update Word VBA project access setting. Open Word -> File -> Options -> Trust Center -> Trust Center Settings -> Macro Settings, enable 'Trust access to the VBA project object model', then rerun this script with -SkipVbomSetup."
-        }
-    }
-
-    $existing = Get-ItemProperty -Path $securityKey -Name $valueName -ErrorAction SilentlyContinue
-    if ($null -ne $existing) {
-        $script:hadOriginalValue = $true
-        $script:originalValue = $existing.$valueName
-    }
+    $script:securityKey = "HKCU:\Software\Microsoft\Office\$(Get-WordOfficeVersion)\Word\Security"
+    Write-Step "Using Word security registry key: $script:securityKey"
 
     try {
-        Set-ItemProperty -Path $securityKey -Name $valueName -Type DWord -Value 1
+        Ensure-RegistryKey $script:securityKey
+        $existing = Get-ItemProperty -Path $script:securityKey -Name $valueName -ErrorAction SilentlyContinue
+        if ($null -ne $existing) {
+            $script:hadOriginalValue = $true
+            $script:originalValue = $existing.$valueName
+        }
+
+        New-ItemProperty -Path $script:securityKey -Name $valueName -PropertyType DWord -Value 1 -Force | Out-Null
     }
     catch {
-        throw "Cannot update Word VBA project access setting. Open Word -> File -> Options -> Trust Center -> Trust Center Settings -> Macro Settings, enable 'Trust access to the VBA project object model', then rerun this script with -SkipVbomSetup."
+        throw "Cannot update Word VBA project access setting at $script:securityKey. Actual error: $($_.Exception.Message)."
     }
 }
 
 function Restore-VbomAccess {
-    if ($SkipVbomSetup) {
+    if ($SkipVbomSetup -or [string]::IsNullOrWhiteSpace($script:securityKey)) {
         return
     }
 
     if ($script:hadOriginalValue) {
-        Set-ItemProperty -Path $securityKey -Name $valueName -Type DWord -Value $script:originalValue -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $script:securityKey -Name $valueName -Type DWord -Value $script:originalValue -ErrorAction SilentlyContinue
     }
     else {
-        Remove-ItemProperty -Path $securityKey -Name $valueName -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $script:securityKey -Name $valueName -ErrorAction SilentlyContinue
     }
 }
 
-function Add-CustomUiToWordPackage {
+function Stop-WordProcessesIfRequested {
+    if (-not $CloseWord) {
+        return
+    }
+
+    $wordProcesses = @(Get-Process WINWORD -ErrorAction SilentlyContinue)
+    if ($wordProcesses.Count -eq 0) {
+        return
+    }
+
+    Write-Step "Closing $($wordProcesses.Count) running WINWORD process(es) because -CloseWord was specified"
+    foreach ($wordProcess in $wordProcesses) {
+        Stop-Process -Id $wordProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+}
+
+function Copy-FileReplacing {
     param(
-        [string]$PackagePath,
-        [string]$CustomUiPath,
-        [array]$CustomIcons
+        [string]$SourcePath,
+        [string]$DestinationPath
     )
 
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $resolvedSource = (Resolve-Path -LiteralPath $SourcePath).Path
+    $destinationFolder = Split-Path -Parent $DestinationPath
+    if (-not [string]::IsNullOrWhiteSpace($destinationFolder)) {
+        [System.IO.Directory]::CreateDirectory($destinationFolder) | Out-Null
+    }
+    [System.IO.File]::Copy($resolvedSource, $DestinationPath, $true)
+}
 
-    $zip = [System.IO.Compression.ZipFile]::Open($PackagePath, [System.IO.Compression.ZipArchiveMode]::Update)
+function Save-DotmWithWord {
+    param(
+        [string]$OutputPath,
+        [switch]$ImportVba
+    )
+
+    $word = $null
+    $doc = $null
+
     try {
-        foreach ($entryName in @('customUI/customUI14.xml', 'customUI/_rels/customUI14.xml.rels')) {
-            $existing = $zip.GetEntry($entryName)
-            if ($null -ne $existing) {
-                $existing.Delete()
-            }
-        }
-        @($zip.Entries | Where-Object { $_.FullName -like 'customUI/images/*' }) | ForEach-Object { $_.Delete() }
+        Write-Step "Starting Word.Application for $OutputPath"
+        $word = New-Object -ComObject Word.Application
+        $word.Visible = $true
+        $word.DisplayAlerts = 0
+        $word.AutomationSecurity = 1
 
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            $zip,
-            $CustomUiPath,
-            'customUI/customUI14.xml'
-        ) | Out-Null
+        Write-Step 'Creating template document'
+        $doc = $word.Documents.Add()
 
-        foreach ($icon in $CustomIcons) {
-            $iconPath = Join-Path (Join-Path $ProjectRoot 'assets') $icon.File
-            if (-not (Test-Path -LiteralPath $iconPath)) {
-                throw "Missing Ribbon icon: $iconPath"
-            }
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $zip,
-                $iconPath,
-                "customUI/images/$($icon.File)"
-            ) | Out-Null
+        if ($ImportVba) {
+            $doc.VBProject.Name = 'OleRawDataInserter'
+            Write-Step 'Importing RawDataOleInserter.bas'
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
+            Write-Step 'Importing RibbonCallbacks.bas'
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
+            Write-Step 'Importing ImageSupportFilesDialog.frm'
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null
+            Write-Step 'Importing UsageHelpDialog.frm'
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'UsageHelpDialog.frm')) | Out-Null
         }
 
-        $customUiRelsEntry = $zip.CreateEntry('customUI/_rels/customUI14.xml.rels')
-        $customUiRelsWriter = New-Object System.IO.StreamWriter($customUiRelsEntry.Open())
-        $relationships = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        foreach ($icon in $CustomIcons) {
-            $relationships += "<Relationship Id=""$($icon.Id)"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"" Target=""images/$($icon.File)""/>"
-        }
-        $relationships += '</Relationships>'
-        $customUiRelsWriter.Write($relationships)
-        $customUiRelsWriter.Close()
-
-        $relsEntry = $zip.GetEntry('_rels/.rels')
-        $relsReader = New-Object System.IO.StreamReader($relsEntry.Open())
-        $relsXml = $relsReader.ReadToEnd()
-        $relsReader.Close()
-        $relsEntry.Delete()
-
-        if ($relsXml -notmatch 'customUI/customUI14.xml') {
-            $relationship = '<Relationship Id="rIdOleRawDataInserterCustomUI" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="customUI/customUI14.xml"/>'
-            $relsXml = $relsXml -replace '</Relationships>', "$relationship</Relationships>"
-        }
-
-        $newRelsEntry = $zip.CreateEntry('_rels/.rels')
-        $relsWriter = New-Object System.IO.StreamWriter($newRelsEntry.Open())
-        $relsWriter.Write($relsXml)
-        $relsWriter.Close()
-
-        $contentTypesEntry = $zip.GetEntry('[Content_Types].xml')
-        $ctReader = New-Object System.IO.StreamReader($contentTypesEntry.Open())
-        $contentTypesXml = $ctReader.ReadToEnd()
-        $ctReader.Close()
-        $contentTypesEntry.Delete()
-
-        if ($contentTypesXml -notmatch 'Extension="png"') {
-            $pngDefault = '<Default Extension="png" ContentType="image/png"/>'
-            $contentTypesXml = $contentTypesXml -replace '</Types>', "$pngDefault</Types>"
-        }
-
-        if ($contentTypesXml -notmatch '/customUI/customUI14.xml') {
-            $override = '<Override PartName="/customUI/customUI14.xml" ContentType="application/xml"/>'
-            $contentTypesXml = $contentTypesXml -replace '</Types>', "$override</Types>"
-        }
-
-        $newContentTypesEntry = $zip.CreateEntry('[Content_Types].xml')
-        $ctWriter = New-Object System.IO.StreamWriter($newContentTypesEntry.Open())
-        $ctWriter.Write($contentTypesXml)
-        $ctWriter.Close()
+        Write-Step "Calling SaveAs2 for $OutputPath"
+        $doc.SaveAs2($OutputPath, 15)
+        Write-Step "Saved: $OutputPath"
     }
     finally {
-        $zip.Dispose()
+        if ($doc -ne $null) {
+            try { $doc.Close($false) } catch { Write-Step "Warning: could not close document cleanly: $($_.Exception.Message)" }
+        }
+        if ($word -ne $null) {
+            try { $word.Quit() } catch { Write-Step "Warning: could not quit Word cleanly: $($_.Exception.Message)" }
+        }
     }
 }
 
@@ -168,56 +196,37 @@ New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 New-Item -ItemType Directory -Force -Path $tempBuildDir | Out-Null
 Set-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Starting build"
 
-if (Test-Path $addinPath) {
-    Write-Step "Removing old add-in: $addinPath"
-    Remove-Item -LiteralPath $addinPath -Force
-}
-if (Test-Path $tempAddinPath) {
-    Write-Step "Removing old temporary add-in: $tempAddinPath"
-    Remove-Item -LiteralPath $tempAddinPath -Force
-}
-
-$word = $null
-$doc = $null
-
 try {
+    Stop-WordProcessesIfRequested
+
+    foreach ($path in @($plainAddinPath, $tempAddinPath)) {
+        if (Test-Path -LiteralPath $path) {
+            Write-Step "Removing old temporary add-in: $path"
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
+
     Write-Step 'Preparing Word VBA project access'
     Set-TemporaryVbomAccess
+    Save-DotmWithWord -OutputPath $plainAddinPath
+    Save-DotmWithWord -OutputPath $tempAddinPath -ImportVba
 
-    Write-Step 'Starting Word.Application'
-    $word = New-Object -ComObject Word.Application
-    $word.Visible = $true
-    $word.DisplayAlerts = 0
-    $word.AutomationSecurity = 1
-
-    Write-Step 'Creating template document'
-    $doc = $word.Documents.Add()
-    $doc.VBProject.Name = 'OleRawDataInserter'
-    Write-Step 'Importing RawDataOleInserter.bas'
-    $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
-    Write-Step 'Importing RibbonCallbacks.bas'
-    $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
-    Write-Step 'Importing ImageSupportFilesDialog.frm'
-    $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null
-    Write-Step 'Importing UsageHelpDialog.frm'
-    $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'UsageHelpDialog.frm')) | Out-Null
-    Write-Step "Saving dotm to temporary ASCII path: $tempAddinPath"
-    $doc.SaveAs2($tempAddinPath, 15)
-    $doc.Close($false)
-    $doc = $null
+    Write-Step "Copying temporary dotm to dist: $addinPath"
+    Copy-FileReplacing $tempAddinPath $addinPath
 
     Write-Step 'Injecting Ribbon customUI'
-    Add-CustomUiToWordPackage -PackagePath $tempAddinPath -CustomUiPath $customUiPath -CustomIcons $customIcons
-
-    Write-Step "Copying built add-in to dist: $addinPath"
-    Copy-Item -LiteralPath $tempAddinPath -Destination $addinPath -Force
+    & (Join-Path $ProjectRoot 'tools\inject-ribbon.ps1') -DotmPath $addinPath -ProjectRoot $ProjectRoot
 
     if ($Install) {
-        $startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
-        Write-Step "Installing to Word STARTUP: $startupDir"
-        New-Item -ItemType Directory -Force -Path $startupDir | Out-Null
-        Copy-Item -LiteralPath $addinPath -Destination (Join-Path $startupDir 'OleRawDataInserter.dotm') -Force
-        "Installed: $(Join-Path $startupDir 'OleRawDataInserter.dotm')"
+        if (-not (Test-Path -LiteralPath $zipToolPath)) {
+            throw "Cannot install because zip helper is missing: $zipToolPath"
+        }
+
+        Write-Step "Installing to Word STARTUP after Word is closed: $startupDir"
+        Copy-FileReplacing $addinPath $startupAddinPath
+        Copy-FileReplacing $zipToolPath $startupZipToolPath
+        "Installed: $startupAddinPath"
+        "Installed: $startupZipToolPath"
     }
 
     "Built: $addinPath"
@@ -228,12 +237,6 @@ catch {
     throw
 }
 finally {
-    if ($doc -ne $null) {
-        $doc.Close($false)
-    }
-    if ($word -ne $null) {
-        $word.Quit()
-    }
     Write-Step 'Restoring Word VBA project access setting'
     Restore-VbomAccess
 }

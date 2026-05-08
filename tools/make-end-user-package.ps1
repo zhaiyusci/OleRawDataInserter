@@ -15,6 +15,7 @@ if ([string]::IsNullOrWhiteSpace($DotmPath)) {
 }
 
 $resolvedDotm = (Resolve-Path $DotmPath).Path
+$zipToolPath = Join-Path $ProjectRoot 'dist\FigurePackageZipTool.exe'
 $packageTemplate = Join-Path $ProjectRoot 'installer\EndUserPackage'
 $payloadDir = Join-Path $packageTemplate 'Payload'
 $releaseDir = Join-Path $ProjectRoot 'release'
@@ -23,6 +24,9 @@ $zipPath = Join-Path $releaseDir 'FigurePackageWordAddin.zip'
 
 if (-not (Test-Path $resolvedDotm)) {
     throw "Could not find built add-in: $DotmPath"
+}
+if (-not (Test-Path $zipToolPath)) {
+    throw "Could not find zip helper: $zipToolPath"
 }
 
 if (Test-Path $releasePackageDir) {
@@ -33,6 +37,7 @@ New-Item -ItemType Directory -Force -Path $releasePackageDir | Out-Null
 Copy-Item -Path (Join-Path $packageTemplate '*') -Destination $releasePackageDir -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $releasePackageDir 'Payload') | Out-Null
 Copy-Item -LiteralPath $resolvedDotm -Destination (Join-Path $releasePackageDir 'Payload\OleRawDataInserter.dotm') -Force
+Copy-Item -LiteralPath $zipToolPath -Destination (Join-Path $releasePackageDir 'Payload\FigurePackageZipTool.exe') -Force
 
 if (Test-Path $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
