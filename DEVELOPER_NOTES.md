@@ -265,7 +265,7 @@ tar.exe -a -cf output.zip -C sourceFolder -- item1 item2 ...
 
 这里不会使用 `-C sourceFolder .`，因为它会让部分工具显示一个 `.` / `./` 根目录项。VBA 会枚举源文件夹的顶层文件和子文件夹，只把这些条目传给 `tar.exe`；顶层 `plot.png`、`plot.svg`、`plot.pdf` 在枚举阶段直接跳过。如果排除后没有任何条目，则创建真正的空 zip。
 
-`Insert Image + Files` 的多文件模式会先创建临时 staging 文件夹：
+`Insert Image + Files` 的多文件/文件夹模式会先创建临时 staging 文件夹：
 
 ```text
 %LOCALAPPDATA%\Temp\OleRawDataInserter_<imageBaseName>_<timestamp>\
@@ -273,14 +273,15 @@ tar.exe -a -cf output.zip -C sourceFolder -- item1 item2 ...
 
 实现规则：
 
-- 用户多选的支持文件会复制到 staging 文件夹。
-- 如果不同目录中的支持文件同名，复制时会改成 `name_2.ext`、`name_3.ext` 等形式，避免覆盖。
+- 用户多选的支持文件会复制到 staging 文件夹根目录。
+- 用户选择的支持文件夹会复制为 staging 根目录下的同名文件夹，并递归保留该文件夹内部相对路径。
+- 如果不同目录中的支持文件或文件夹在 staging 根目录同名，复制时会改成 `name_2.ext`、`name_3.ext` 或 `folder_2` 等形式，避免覆盖。
 - staging 文件夹再通过 `CreateZipFromPath(..., False)` 打包；这个模式不会排除 `plot.png`、`plot.svg`、`plot.pdf`。
 - zip 创建完成后会删除 staging 文件夹。
 
-`Manage Image/OLE Files` 对普通图片复用 `CreateZipFromSupportFiles` 多文件打包逻辑。它不会把原图文件放进 zip；原图只作为 OLE 对象的显示外观，zip 里只包含用户选择的支持文件。
+`Manage Image/OLE Files` 对普通图片复用 `CreateZipFromSupportFiles` 多文件/文件夹打包逻辑。它不会把原图文件放进 zip；原图只作为 OLE 对象的显示外观，zip 里只包含用户选择的支持文件和文件夹内容。
 
-对已有 OLE 对象，管理逻辑会从 `Range.WordOpenXML` 中取出 `/word/embeddings/oleObject*.bin`，解析 OLE Compound File 中的 `Ole10Native` stream，抽出原 zip。确认窗口里 `[embedded]` 条目表示旧 zip 中保留的文件，`[new]` 条目表示用户新选的本地文件。提交时会解包旧 zip、删除未保留的条目、复制新增文件、重新打包，并用原显示图替换回新的 zip OLE 对象。
+对已有 OLE 对象，管理逻辑会从 `Range.WordOpenXML` 中取出 `/word/embeddings/oleObject*.bin`，解析 OLE Compound File 中的 `Ole10Native` stream，抽出原 zip。确认窗口里 `[embedded]` 条目表示旧 zip 中保留的文件，`[new]` 条目表示用户新选的本地文件或文件夹。提交时会解包旧 zip、删除未保留的条目、复制新增文件/文件夹、重新打包，并用原显示图替换回新的 zip OLE 对象。
 
 ## 图片尺寸实现说明
 

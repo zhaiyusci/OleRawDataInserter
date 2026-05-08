@@ -13,11 +13,11 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
+
 Option Explicit
 
 Private Const EMBEDDED_PREFIX As String = "[embedded] "
 Private Const NEW_PREFIX As String = "[new] "
-
 Private attachToSelectedImage As Boolean
 Private manageExistingOle As Boolean
 Private targetInlineImage As Object
@@ -88,9 +88,19 @@ Private Sub cmdAddFiles_Click()
         .Filters.Add "All files", "*.*"
         If .Show = -1 Then
             For i = 1 To .SelectedItems.Count
-                AddSupportFileIfMissing CStr(.SelectedItems(i))
+                AddSupportPathIfMissing CStr(.SelectedItems(i))
             Next i
         End If
+    End With
+
+    UpdateDialogState
+End Sub
+
+Private Sub cmdAddFolder_Click()
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "Choose a support folder to embed"
+        .AllowMultiSelect = False
+        If .Show = -1 Then AddSupportPathIfMissing CStr(.SelectedItems(1))
     End With
 
     UpdateDialogState
@@ -133,7 +143,7 @@ Private Sub cmdInsert_Click()
     End If
 
     If lstSupportFiles.ListCount = 0 And Not manageExistingOle Then
-        MsgBox "Please add at least one support file.", vbExclamation
+        MsgBox "Please add at least one support file or folder.", vbExclamation
         Exit Sub
     End If
 
@@ -192,14 +202,15 @@ Private Sub txtImagePath_Change()
     UpdateDialogState
 End Sub
 
-Private Sub AddSupportFileIfMissing(ByVal filePath As String)
+
+Private Sub AddSupportPathIfMissing(ByVal supportPath As String)
     Dim i As Long
     Dim displayText As String
 
     If manageExistingOle Then
-        displayText = NEW_PREFIX & filePath
+        displayText = NEW_PREFIX & supportPath
     Else
-        displayText = filePath
+        displayText = supportPath
     End If
 
     For i = 0 To lstSupportFiles.ListCount - 1
@@ -210,8 +221,8 @@ Private Sub AddSupportFileIfMissing(ByVal filePath As String)
 End Sub
 
 Private Sub ConfigureForSelectedImageMode()
-    Caption = "Attach Files to Selected Image"
-    lblIntro.Caption = "Review the support files before attaching them to the selected image. The selected image will be replaced by an OLE object while keeping its size and position."
+    Caption = "Attach Files/Folders to Selected Image"
+    lblIntro.Caption = "Review the support files and folders before attaching them to the selected image. The selected image will be replaced by an OLE object while keeping its size and position."
     lblImage.Caption = "Selected image in current document"
     txtImagePath.Text = "Selected image in current document"
     txtImagePath.Enabled = False
@@ -220,8 +231,8 @@ Private Sub ConfigureForSelectedImageMode()
 End Sub
 
 Private Sub ConfigureForSelectedOleMode()
-    Caption = "Manage Files in Selected OLE Object"
-    lblIntro.Caption = "Review the files already embedded in the selected OLE object. Remove rows to delete files, or add new files, then click Insert to rebuild the OLE object while keeping its display, size, and position."
+    Caption = "Manage Files/Folders in Selected OLE Object"
+    lblIntro.Caption = "Review the files already embedded in the selected OLE object. Remove rows to delete files, or add new files/folders, then click Insert to rebuild the OLE object while keeping its display, size, and position."
     lblImage.Caption = "Selected OLE object in current document"
     txtImagePath.Text = "Selected OLE object in current document"
     txtImagePath.Enabled = False
@@ -245,24 +256,24 @@ Private Sub UpdateDialogState()
     Dim hasImage As Boolean
 
     hasImage = attachToSelectedImage Or manageExistingOle Or Len(Trim$(txtImagePath.Text)) > 0
-    lblSupportFiles.Caption = "Support files (" & CStr(lstSupportFiles.ListCount) & " selected)"
+    lblSupportFiles.Caption = "Support files/folders (" & CStr(lstSupportFiles.ListCount) & " selected)"
     cmdInsert.Enabled = (hasImage And (manageExistingOle Or lstSupportFiles.ListCount > 0))
 
     If cmdInsert.Enabled Then
         If manageExistingOle Then
             lblSummary.Caption = "Ready. Click Insert to rebuild the selected OLE object with the files currently shown in the list."
         ElseIf attachToSelectedImage Then
-            lblSummary.Caption = "Ready. Click Insert to attach the selected support files while preserving the selected image size and position."
+            lblSummary.Caption = "Ready. Click Insert to attach the selected support files/folders while preserving the selected image size and position."
         Else
-            lblSummary.Caption = "Ready. Click Insert to embed the selected support files and display the chosen image."
+            lblSummary.Caption = "Ready. Click Insert to embed the selected support files/folders and display the chosen image."
         End If
     Else
         If manageExistingOle Then
             lblSummary.Caption = "The package can be rebuilt even if the list is empty."
         ElseIf attachToSelectedImage Then
-            lblSummary.Caption = "Add at least one support file."
+            lblSummary.Caption = "Add at least one support file or folder."
         Else
-            lblSummary.Caption = "Choose an image and at least one support file."
+            lblSummary.Caption = "Choose an image and at least one support file or folder."
         End If
     End If
 End Sub

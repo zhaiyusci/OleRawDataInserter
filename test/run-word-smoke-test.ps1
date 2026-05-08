@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 
 $sampleDir = Join-Path $ProjectRoot 'test\sample-plot'
 $supportDir = Join-Path $sampleDir 'support-extra'
+$supportFolderDir = Join-Path $sampleDir 'support-folder'
+$supportNestedDir = Join-Path $supportFolderDir 'nested'
 $modulePath = Join-Path $ProjectRoot 'src\RawDataOleInserter.bas'
 $dialogPath = Join-Path $ProjectRoot 'src\ImageSupportFilesDialog.frm'
 $usageDialogPath = Join-Path $ProjectRoot 'src\UsageHelpDialog.frm'
@@ -23,6 +25,7 @@ Set-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format 'yyy
 Write-Step 'Preparing sample plot folder'
 New-Item -ItemType Directory -Force -Path $sampleDir | Out-Null
 New-Item -ItemType Directory -Force -Path $supportDir | Out-Null
+New-Item -ItemType Directory -Force -Path $supportNestedDir | Out-Null
 
 Add-Type -AssemblyName System.Drawing
 $bitmap = New-Object System.Drawing.Bitmap 640, 360
@@ -46,6 +49,7 @@ Set-Content -LiteralPath (Join-Path $sampleDir 'plot.py') -Encoding UTF8 -Value 
 Set-Content -LiteralPath (Join-Path $sampleDir 'data.csv') -Encoding UTF8 -Value "x,y`n1,2`n2,4"
 Set-Content -LiteralPath (Join-Path $sampleDir 'notes.txt') -Encoding UTF8 -Value "managed OLE support note"
 Set-Content -LiteralPath (Join-Path $supportDir 'data.csv') -Encoding UTF8 -Value "x,y`n3,9`n4,16"
+Set-Content -LiteralPath (Join-Path $supportNestedDir 'metadata.json') -Encoding UTF8 -Value '{"source":"folder support"}'
 
 $word = $null
 $doc = $null
@@ -71,6 +75,7 @@ try {
     $escapedDisplayImage = (Join-Path $sampleDir 'display.jpg').Replace('"', '""')
     $escapedDataPath = (Join-Path $sampleDir 'data.csv').Replace('"', '""')
     $escapedDuplicateDataPath = (Join-Path $supportDir 'data.csv').Replace('"', '""')
+    $escapedSupportFolderDir = $supportFolderDir.Replace('"', '""')
     $escapedPlotPyPath = (Join-Path $sampleDir 'plot.py').Replace('"', '""')
     $escapedNotesPath = (Join-Path $sampleDir 'notes.txt').Replace('"', '""')
     $escapedLogPath = $logPath.Replace('"', '""')
@@ -85,8 +90,12 @@ Public Sub SmokeTest()
     Dim linkedPicture As InlineShape
     Dim existingFloatingPicture As Shape
     Dim floatingAnchor As Range
+    Dim supportDialog As ImageSupportFilesDialog
 
     On Error GoTo Failed
+    Set supportDialog = New ImageSupportFilesDialog
+    If supportDialog.Controls("cmdAddFolder") Is Nothing Then Err.Raise vbObjectError + 907, "SmokeTest", "Support dialog did not create Add Folder button"
+    Unload supportDialog
     InsertPlotFolder "$escapedSampleDir"
     initialZipPath = ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(1))
     AssertNoRawRootZipEntry initialZipPath
@@ -94,17 +103,22 @@ Public Sub SmokeTest()
     keepEntries.Add "plot.py"
     Set supportFiles = New Collection
     supportFiles.Add "$escapedNotesPath"
+    supportFiles.Add "$escapedSupportFolderDir"
     ManageFilesInInlineOle ActiveDocument.InlineShapes.Item(1), ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(1)), keepEntries, supportFiles
     managedZipPath = ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(1))
     Set managedEntries = GetZipEntryNames(managedZipPath)
     If Not CollectionContainsText(managedEntries, "plot.py") Then Err.Raise vbObjectError + 900, "SmokeTest", "Managed OLE zip lost plot.py"
     If Not CollectionContainsText(managedEntries, "notes.txt") Then Err.Raise vbObjectError + 901, "SmokeTest", "Managed OLE zip did not add notes.txt"
     If CollectionContainsText(managedEntries, "data.csv") Then Err.Raise vbObjectError + 902, "SmokeTest", "Managed OLE zip did not remove data.csv"
+    If Not CollectionContainsText(managedEntries, "support-folder/nested/metadata.json") Then Err.Raise vbObjectError + 905, "SmokeTest", "Managed OLE zip did not add folder contents"
     Set supportFiles = New Collection
     supportFiles.Add "$escapedDataPath"
     supportFiles.Add "$escapedDuplicateDataPath"
     supportFiles.Add "$escapedPlotPyPath"
+    supportFiles.Add "$escapedSupportFolderDir"
     InsertImageAndSupportFilesAsOle "$escapedDisplayImage", supportFiles
+    Set managedEntries = GetZipEntryNames(ExtractZipFromInlineOleObject(ActiveDocument.InlineShapes.Item(2)))
+    If Not CollectionContainsText(managedEntries, "support-folder/nested/metadata.json") Then Err.Raise vbObjectError + 906, "SmokeTest", "Image + files zip did not add folder contents"
     Set existingPicture = Selection.InlineShapes.AddPicture("$escapedDisplayImage", False, True)
     existingPicture.Width = 180
     existingPicture.Height = 101.25
@@ -243,4 +257,5 @@ finally {
         $word.Quit()
     }
     Remove-Item -LiteralPath (Join-Path $sampleDir 'notes.txt') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $supportFolderDir -Recurse -Force -ErrorAction SilentlyContinue
 }

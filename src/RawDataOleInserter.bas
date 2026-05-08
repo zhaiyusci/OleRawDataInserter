@@ -367,14 +367,21 @@ Public Function GetZipEntryNames(ByVal zipPath As String) As Collection
         Open listPath For Input As #fileNum
         Do While Not EOF(fileNum)
             Line Input #fileNum, lineText
-            normalizedEntry = NormalizeZipEntryName(lineText)
-            If Len(normalizedEntry) > 0 Then entries.Add normalizedEntry
+            If Not IsZipDirectoryEntry(lineText) Then
+                normalizedEntry = NormalizeZipEntryName(lineText)
+                If Len(normalizedEntry) > 0 Then entries.Add normalizedEntry
+            End If
         Loop
         Close #fileNum
         fso.DeleteFile listPath, True
     End If
 
     Set GetZipEntryNames = entries
+End Function
+
+Private Function IsZipDirectoryEntry(ByVal entryName As String) As Boolean
+    entryName = Trim$(Replace(entryName, "\", "/"))
+    IsZipDirectoryEntry = (Len(entryName) > 0 And Right$(entryName, 1) = "/")
 End Function
 
 Public Sub ManageFilesInInlineOle(ByVal targetInlineShape As Object, ByVal existingZipPath As String, ByVal keepEntryNames As Collection, ByVal newFiles As Collection)
@@ -488,12 +495,12 @@ Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supp
     End If
 
     If supportFiles Is Nothing Then
-        MsgBox "No support files were selected.", vbExclamation
+        MsgBox "No support files or folders were selected.", vbExclamation
         Exit Sub
     End If
 
     If supportFiles.Count = 0 Then
-        MsgBox "No support files were selected.", vbExclamation
+        MsgBox "No support files or folders were selected.", vbExclamation
         Exit Sub
     End If
 
@@ -753,7 +760,7 @@ Private Function BuildUsageHelpText() As String
         "\u65B9\u5F0F\u4E8C\uFF1A\u56FE\u7247 + \u652F\u6301\u6587\u4EF6\n" & _
         "1. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Image + Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
         "2. \u5728\u7A97\u53E3\u4E2D\u70B9\u51FB Choose image...\uFF0C\u9009\u62E9\u8981\u663E\u793A\u7684\u56FE\u7247\uFF0C\u652F\u6301 png\u3001jpg\u3001jpeg\u3001tif\u3001tiff\u3002\n" & _
-        "3. \u70B9\u51FB Add files... \u591A\u9009\u9700\u8981\u5D4C\u5165\u7684\u652F\u6301\u6587\u4EF6\uFF0C\u6587\u4EF6\u7C7B\u578B\u4E0D\u9650\uFF1B\u7A97\u53E3\u4E2D\u4F1A\u5217\u51FA\u5DF2\u9009\u62E9\u7684\u6587\u4EF6\u3002\n" & _
+        "3. \u70B9\u51FB Add files... \u591A\u9009\u9700\u8981\u5D4C\u5165\u7684\u652F\u6301\u6587\u4EF6\uFF0C\u4E5F\u53EF\u70B9\u51FB Add folder... \u6DFB\u52A0\u6574\u4E2A\u6587\u4EF6\u5939\uFF1B\u6587\u4EF6\u7C7B\u578B\u4E0D\u9650\u3002\n" & _
         "4. \u5982\u679C\u9009\u9519\u4E86\uFF0C\u53EF\u4EE5\u7528 Remove selected \u6216 Clear \u8C03\u6574\u5217\u8868\u3002\n" & _
         "5. \u786E\u8BA4\u56FE\u7247\u548C\u652F\u6301\u6587\u4EF6\u5217\u8868\u65E0\u8BEF\u540E\uFF0C\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u652F\u6301\u6587\u4EF6\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
         "6. \u5982\u679C\u652F\u6301\u6587\u4EF6\u540C\u540D\uFF0Czip \u5185\u4F1A\u81EA\u52A8\u6539\u540D\uFF0C\u907F\u514D\u8986\u76D6\u3002\n\n" & _
@@ -761,7 +768,7 @@ Private Function BuildUsageHelpText() As String
         "1. \u5148\u5728 Word \u6587\u6863\u4E2D\u9009\u4E2D\u4E00\u5F20\u5DF2\u63D2\u5165\u7684\u56FE\u7247\uFF0C\u6216\u9009\u4E2D\u4E00\u4E2A\u5DF2\u6709\u7684 Figure Package OLE \u5BF9\u8C61\u3002\n" & _
         "2. \u70B9\u51FB Figure Package > Manage Image/OLE Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
         "3. \u5982\u679C\u9009\u4E2D\u7684\u662F\u666E\u901A\u56FE\u7247\uFF0C\u6DFB\u52A0\u652F\u6301\u6587\u4EF6\u540E\u70B9\u51FB Insert\uFF1B\u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n" & _
-        "4. \u5982\u679C\u9009\u4E2D\u7684\u662F\u5DF2\u6709 OLE \u5BF9\u8C61\uFF0C\u7A97\u53E3\u4F1A\u5217\u51FA\u73B0\u6709 zip \u4E2D\u7684\u6587\u4EF6\uFF1B\u5220\u9664 [embedded] \u6761\u76EE\u8868\u793A\u4ECE\u6700\u7EC8\u5305\u4E2D\u79FB\u9664\uFF0C\u6DFB\u52A0 [new] \u6761\u76EE\u8868\u793A\u65B0\u589E\u6587\u4EF6\u3002\n" & _
+        "4. \u5982\u679C\u9009\u4E2D\u7684\u662F\u5DF2\u6709 OLE \u5BF9\u8C61\uFF0C\u7A97\u53E3\u4F1A\u5217\u51FA\u73B0\u6709 zip \u4E2D\u7684\u6587\u4EF6\uFF1B\u5220\u9664 [embedded] \u6761\u76EE\u8868\u793A\u4ECE\u6700\u7EC8\u5305\u4E2D\u79FB\u9664\uFF0C\u6DFB\u52A0 [new] \u6761\u76EE\u8868\u793A\u65B0\u589E\u6587\u4EF6\u6216\u6587\u4EF6\u5939\u3002\n" & _
         "5. \u786E\u8BA4\u5217\u8868\u540E\u70B9\u51FB Insert\uFF0C\u63D2\u4EF6\u4F1A\u91CD\u65B0\u751F\u6210 zip OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4FDD\u6301\u4E0D\u53D8\u3002\n\n" & _
         "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u65B0\u63D2\u5165\u56FE\u7247\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF0C\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\uFF1B\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u65F6\u4FDD\u6301\u539F\u5BF9\u8C61\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002"
 
@@ -800,11 +807,11 @@ End Function
 
 Private Sub ValidateSupportFiles(ByVal supportFiles As Collection)
     If supportFiles Is Nothing Then
-        Err.Raise vbObjectError + 520, "ValidateSupportFiles", "No support files were selected."
+        Err.Raise vbObjectError + 520, "ValidateSupportFiles", "No support files or folders were selected."
     End If
 
     If supportFiles.Count = 0 Then
-        Err.Raise vbObjectError + 521, "ValidateSupportFiles", "No support files were selected."
+        Err.Raise vbObjectError + 521, "ValidateSupportFiles", "No support files or folders were selected."
     End If
 End Sub
 
@@ -1619,8 +1626,8 @@ End Sub
 Private Sub StageAdditionalSupportFiles(ByVal fso As Object, ByVal supportFiles As Collection, ByVal stagingFolder As String)
     Dim usedNames As Object
     Dim existingFile As Object
-    Dim filePath As Variant
-    Dim targetName As String
+    Dim existingFolder As Object
+    Dim supportPath As Variant
 
     If supportFiles Is Nothing Then Exit Sub
 
@@ -1628,15 +1635,13 @@ Private Sub StageAdditionalSupportFiles(ByVal fso As Object, ByVal supportFiles 
     For Each existingFile In fso.GetFolder(stagingFolder).Files
         usedNames(LCase$(CStr(existingFile.Name))) = True
     Next existingFile
+    For Each existingFolder In fso.GetFolder(stagingFolder).SubFolders
+        usedNames(LCase$(CStr(existingFolder.Name))) = True
+    Next existingFolder
 
-    For Each filePath In supportFiles
-        If Not fso.FileExists(CStr(filePath)) Then
-            Err.Raise vbObjectError + 522, "StageAdditionalSupportFiles", "Support file does not exist: " & CStr(filePath)
-        End If
-
-        targetName = GetUniqueStagedFileName(fso, usedNames, fso.GetFileName(CStr(filePath)))
-        fso.CopyFile CStr(filePath), fso.BuildPath(stagingFolder, targetName), True
-    Next filePath
+    For Each supportPath In supportFiles
+        StageSupportPath fso, CStr(supportPath), stagingFolder, usedNames, "StageAdditionalSupportFiles"
+    Next supportPath
 End Sub
 
 Private Function FolderHasAnyFiles(ByVal folder As Object) As Boolean
@@ -1690,29 +1695,78 @@ End Function
 
 Private Sub StageSupportFiles(ByVal fso As Object, ByVal supportFiles As Collection, ByVal stagingFolder As String)
     Dim usedNames As Object
-    Dim filePath As Variant
-    Dim targetName As String
+    Dim supportPath As Variant
 
     If supportFiles Is Nothing Then
-        Err.Raise vbObjectError + 520, "StageSupportFiles", "No support files were selected."
+        Err.Raise vbObjectError + 520, "StageSupportFiles", "No support files or folders were selected."
     End If
 
     If supportFiles.Count = 0 Then
-        Err.Raise vbObjectError + 521, "StageSupportFiles", "No support files were selected."
+        Err.Raise vbObjectError + 521, "StageSupportFiles", "No support files or folders were selected."
     End If
 
     DeleteFolderIfExists fso, stagingFolder
     fso.CreateFolder stagingFolder
     Set usedNames = CreateObject("Scripting.Dictionary")
 
-    For Each filePath In supportFiles
-        If Not fso.FileExists(CStr(filePath)) Then
-            Err.Raise vbObjectError + 522, "StageSupportFiles", "Support file does not exist: " & CStr(filePath)
-        End If
+    For Each supportPath In supportFiles
+        StageSupportPath fso, CStr(supportPath), stagingFolder, usedNames, "StageSupportFiles"
+    Next supportPath
+End Sub
 
-        targetName = GetUniqueStagedFileName(fso, usedNames, fso.GetFileName(CStr(filePath)))
-        fso.CopyFile CStr(filePath), fso.BuildPath(stagingFolder, targetName), True
-    Next filePath
+Private Sub StageSupportPath(ByVal fso As Object, ByVal supportPath As String, ByVal stagingFolder As String, ByVal usedNames As Object, ByVal errorSource As String)
+    Dim targetName As String
+    Dim targetPath As String
+    Dim sourceFolder As Object
+
+    supportPath = Trim$(supportPath)
+
+    If fso.FileExists(supportPath) Then
+        targetName = GetUniqueStagedFileName(fso, usedNames, fso.GetFileName(supportPath))
+        fso.CopyFile supportPath, fso.BuildPath(stagingFolder, targetName), True
+    ElseIf fso.FolderExists(supportPath) Then
+        Set sourceFolder = fso.GetFolder(supportPath)
+        targetName = CStr(sourceFolder.Name)
+        If Len(targetName) = 0 Then targetName = "folder"
+        targetName = GetUniqueStagedFolderName(usedNames, targetName)
+        targetPath = fso.BuildPath(stagingFolder, targetName)
+        CopySupportFolderToStaging fso, CStr(sourceFolder.Path), targetPath
+    Else
+        Err.Raise vbObjectError + 522, errorSource, "Support file or folder does not exist: " & supportPath
+    End If
+End Sub
+
+Private Function GetUniqueStagedFolderName(ByVal usedNames As Object, ByVal folderName As String) As String
+    Dim candidate As String
+    Dim index As Long
+
+    candidate = folderName
+    index = 2
+
+    Do While usedNames.Exists(LCase$(candidate))
+        candidate = folderName & "_" & CStr(index)
+        index = index + 1
+    Loop
+
+    usedNames.Add LCase$(candidate), True
+    GetUniqueStagedFolderName = candidate
+End Function
+
+Private Sub CopySupportFolderToStaging(ByVal fso As Object, ByVal sourceFolderPath As String, ByVal targetFolderPath As String)
+    Dim sourceFolder As Object
+    Dim fileItem As Object
+    Dim subFolder As Object
+
+    Set sourceFolder = fso.GetFolder(sourceFolderPath)
+    If Not fso.FolderExists(targetFolderPath) Then fso.CreateFolder targetFolderPath
+
+    For Each fileItem In sourceFolder.Files
+        fso.CopyFile CStr(fileItem.Path), fso.BuildPath(targetFolderPath, CStr(fileItem.Name)), True
+    Next fileItem
+
+    For Each subFolder In sourceFolder.SubFolders
+        CopySupportFolderToStaging fso, CStr(subFolder.Path), fso.BuildPath(targetFolderPath, CStr(subFolder.Name))
+    Next subFolder
 End Sub
 
 Private Function GetUniqueStagedFileName(ByVal fso As Object, ByVal usedNames As Object, ByVal fileName As String) As String
