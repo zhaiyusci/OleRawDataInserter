@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$outDir = Join-Path $env:LOCALAPPDATA 'Temp\OleRawDataInserterBuild'
+$outDir = Join-Path $env:LOCALAPPDATA 'Temp\OLEPackagerBuild'
 $plainDotm = Join-Path $outDir 'PlainSaveTest.dotm'
 $vbaDotm = Join-Path $outDir 'VbaSaveTest.dotm'
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
@@ -31,7 +31,8 @@ function Test-SaveDotm {
         $doc = $word.Documents.Add()
         if ($ImportVba) {
             "Importing VBA modules"
-            $doc.VBProject.Name = 'OleRawDataInserter'
+            $doc.VBProject.Name = 'OLEPackager'
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'Localization.bas')) | Out-Null
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RibbonCallbacks.bas')) | Out-Null
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'ImageSupportFilesDialog.frm')) | Out-Null

@@ -15,7 +15,7 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
 $customUiPath = Join-Path $ProjectRoot 'customUI\customUI14.xml'
 $resolvedDotm = (Resolve-Path $DotmPath).Path
 $customIcons = @(
-    @{ Id = 'InsertFigurePackageIcon'; File = 'insert-figure-package-icon.png' },
+    @{ Id = 'InsertOLEPackageIcon'; File = 'insert-ole-package-icon.png' },
     @{ Id = 'InsertImageFilesIcon'; File = 'insert-image-files-icon.png' },
     @{ Id = 'ManageImageOleFilesIcon'; File = 'manage-image-ole-files-icon.png' },
     @{ Id = 'UsageHelpIcon'; File = 'usage-help-icon.png' }
@@ -84,7 +84,7 @@ function Add-CustomUiToWordPackage {
         $relsEntry.Delete()
 
         if ($relsXml -notmatch 'customUI/customUI14.xml') {
-            $relationship = '<Relationship Id="rIdOleRawDataInserterCustomUI" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="customUI/customUI14.xml"/>'
+            $relationship = '<Relationship Id="rIdOLEPackagerCustomUI" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="customUI/customUI14.xml"/>'
             $relsXml = $relsXml -replace '</Relationships>', "$relationship</Relationships>"
         }
 

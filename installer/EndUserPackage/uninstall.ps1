@@ -2,8 +2,10 @@ $ErrorActionPreference = 'Stop'
 
 $packageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
-$targetPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
-$zipToolTargetPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
+$targetPath = Join-Path $startupDir 'OLEPackager.dotm'
+$zipToolTargetPath = Join-Path $startupDir 'OLEPackagerZipTool.exe'
+$legacyTargetPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
+$legacyZipToolTargetPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
 $logPath = Join-Path $packageRoot 'install.log'
 
 function Write-InstallLog {
@@ -22,7 +24,7 @@ try {
         throw 'Microsoft Word is running.'
     }
 
-    foreach ($path in @($targetPath, $zipToolTargetPath)) {
+    foreach ($path in @($targetPath, $zipToolTargetPath, $legacyTargetPath, $legacyZipToolTargetPath)) {
         if (Test-Path $path) {
             Write-InstallLog "Removing: $path"
             Remove-Item -LiteralPath $path -Force

@@ -4,7 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 
-internal static class FigurePackageZipTool
+internal static class OLEPackagerZipTool
 {
     private static readonly Encoding Utf8 = new UTF8Encoding(false);
     private static readonly HashSet<string> GeneratedPlotFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -210,8 +210,8 @@ internal static class FigurePackageZipTool
     private static void Usage()
     {
         Console.Error.WriteLine("Usage:");
-        Console.Error.WriteLine("  FigurePackageZipTool create <sourcePath> <zipPath> <excludeGeneratedPlotFiles>");
-        Console.Error.WriteLine("  FigurePackageZipTool list <zipPath> <listPath>");
-        Console.Error.WriteLine("  FigurePackageZipTool extract <zipPath> <targetFolder>");
+        Console.Error.WriteLine("  OLEPackagerZipTool create <sourcePath> <zipPath> <excludeGeneratedPlotFiles>");
+        Console.Error.WriteLine("  OLEPackagerZipTool list <zipPath> <listPath>");
+        Console.Error.WriteLine("  OLEPackagerZipTool extract <zipPath> <targetFolder>");
     }
 }

@@ -19,10 +19,11 @@ $unicodeNestedFileName = (-join ([char[]](0x8BF4, 0x660E))) + '.txt'
 $unicodeWorkspaceDir = Join-Path $sampleDir $unicodeWorkspaceName
 $unicodeWorkspaceNestedDir = Join-Path $unicodeWorkspaceDir $unicodeNestedName
 $unicodeExtractDir = Join-Path $sampleDir 'unicode-extract'
+$localizationPath = Join-Path $ProjectRoot 'src\Localization.bas'
 $modulePath = Join-Path $ProjectRoot 'src\RawDataOleInserter.bas'
 $dialogPath = Join-Path $ProjectRoot 'src\ImageSupportFilesDialog.frm'
 $usageDialogPath = Join-Path $ProjectRoot 'src\UsageHelpDialog.frm'
-$zipToolPath = Join-Path $ProjectRoot 'dist\FigurePackageZipTool.exe'
+$zipToolPath = Join-Path $ProjectRoot 'dist\OLEPackagerZipTool.exe'
 $logPath = Join-Path $ProjectRoot 'test\word-smoke-test.log'
 
 function Write-Step {
@@ -90,6 +91,8 @@ try {
 
     Write-Step 'Creating document'
     $doc = $word.Documents.Add()
+    Write-Step 'Importing localization module'
+    $doc.VBProject.VBComponents.Import($localizationPath) | Out-Null
     Write-Step 'Importing VBA module'
     $doc.VBProject.VBComponents.Import($modulePath) | Out-Null
     Write-Step 'Importing support-files dialog'
@@ -135,7 +138,7 @@ Public Sub SmokeTest()
     On Error GoTo Failed
     LogSmokeStep "$escapedLogPath", "VBA step: dialog check"
     Set supportDialog = New ImageSupportFilesDialog
-    If supportDialog.Controls("cmdAddFiles").Caption <> "Open Folder..." Then Err.Raise vbObjectError + 907, "SmokeTest", "Support dialog did not switch to system folder mode"
+    If supportDialog.Controls("cmdAddFiles").Caption <> T("dialog.openFolder") Then Err.Raise vbObjectError + 907, "SmokeTest", "Support dialog did not switch to localized system folder mode"
     Unload supportDialog
     LogSmokeStep "$escapedLogPath", "VBA step: insert plot folder"
     InsertPlotFolder "$escapedSampleDir"
@@ -171,7 +174,7 @@ Public Sub SmokeTest()
     If Not CollectionContainsText(unicodeEntries, unicodeRootEntry) Then Err.Raise vbObjectError + 908, "SmokeTest", "UTF-8 zip did not preserve Chinese root file name"
     If Not CollectionContainsText(unicodeEntries, unicodeNestedEntry) Then Err.Raise vbObjectError + 909, "SmokeTest", "UTF-8 zip did not preserve Chinese nested file name"
     Set fso = CreateObject("Scripting.FileSystemObject")
-    unicodeExtractDir = fso.BuildPath(fso.GetSpecialFolder(2), "OleRawDataInserterUnicodeExtract_" & Format(Now, "yyyymmdd_hhnnss"))
+    unicodeExtractDir = fso.BuildPath(fso.GetSpecialFolder(2), "OLEPackagerUnicodeExtract_" & Format(Now, "yyyymmdd_hhnnss"))
     LogSmokeStep "$escapedLogPath", "VBA step: extract unicode package"
     ExtractZipToWorkingFolder unicodeZipPath, unicodeExtractDir
     If Not fso.FileExists(fso.BuildPath(unicodeExtractDir, unicodeRootEntry)) Then Err.Raise vbObjectError + 910, "SmokeTest", "UTF-8 zip did not extract Chinese root file name"
@@ -264,7 +267,7 @@ Private Sub AssertNoRawRootZipEntry(ByVal zipPath As String)
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     Set wsh = CreateObject("WScript.Shell")
-    listPath = fso.BuildPath(fso.GetSpecialFolder(2), "OleRawDataInserterSmokeZipList_" & Format(Now, "yyyymmdd_hhnnss") & ".txt")
+    listPath = fso.BuildPath(fso.GetSpecialFolder(2), "OLEPackagerSmokeZipList_" & Format(Now, "yyyymmdd_hhnnss") & ".txt")
     command = "cmd.exe /c tar.exe -tf " & QuoteForTestCommandLine(zipPath) & " > " & QuoteForTestCommandLine(listPath)
     exitCode = wsh.Run(command, 0, True)
     If exitCode <> 0 Then Err.Raise vbObjectError + 903, "SmokeTest", "tar.exe failed to list initial zip entries"

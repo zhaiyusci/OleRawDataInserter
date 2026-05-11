@@ -1,11 +1,15 @@
 $ErrorActionPreference = 'Stop'
 
 $packageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$payloadPath = Join-Path $packageRoot 'Payload\OleRawDataInserter.dotm'
-$zipToolPayloadPath = Join-Path $packageRoot 'Payload\FigurePackageZipTool.exe'
+$payloadPath = Join-Path $packageRoot 'Payload\OLEPackager.dotm'
+$zipToolPayloadPath = Join-Path $packageRoot 'Payload\OLEPackagerZipTool.exe'
 $startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
-$targetPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
-$zipToolTargetPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
+$targetPath = Join-Path $startupDir 'OLEPackager.dotm'
+$zipToolTargetPath = Join-Path $startupDir 'OLEPackagerZipTool.exe'
+$legacyPaths = @(
+    (Join-Path $startupDir 'OleRawDataInserter.dotm'),
+    (Join-Path $startupDir 'FigurePackageZipTool.exe')
+)
 $logPath = Join-Path $packageRoot 'install.log'
 
 function Write-InstallLog {
@@ -19,10 +23,10 @@ Set-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format 'yyy
 
 try {
     if (-not (Test-Path $payloadPath)) {
-        throw "Missing Payload\OleRawDataInserter.dotm. This installer package is incomplete."
+        throw "Missing Payload\OLEPackager.dotm. This installer package is incomplete."
     }
     if (-not (Test-Path $zipToolPayloadPath)) {
-        throw "Missing Payload\FigurePackageZipTool.exe. This installer package is incomplete."
+        throw "Missing Payload\OLEPackagerZipTool.exe. This installer package is incomplete."
     }
 
     $wordProcesses = Get-Process WINWORD -ErrorAction SilentlyContinue
@@ -33,6 +37,13 @@ try {
 
     Write-InstallLog "Creating Word STARTUP folder: $startupDir"
     New-Item -ItemType Directory -Force -Path $startupDir | Out-Null
+
+    foreach ($legacyPath in $legacyPaths) {
+        if (Test-Path $legacyPath) {
+            Write-InstallLog "Removing legacy file: $legacyPath"
+            Remove-Item -LiteralPath $legacyPath -Force
+        }
+    }
 
     Write-InstallLog "Installing add-in to: $targetPath"
     Copy-Item -LiteralPath $payloadPath -Destination $targetPath -Force

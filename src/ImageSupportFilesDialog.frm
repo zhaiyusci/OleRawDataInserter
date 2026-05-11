@@ -78,14 +78,14 @@ End Sub
 
 Private Sub cmdBrowseImage_Click()
     With Application.FileDialog(msoFileDialogFilePicker)
-        .Title = "Choose the image to display"
+        .Title = T("dialog.fileDialog.chooseImage")
         .AllowMultiSelect = False
         .Filters.Clear
-        .Filters.Add "Image files", "*.png;*.jpg;*.jpeg;*.tif;*.tiff"
-        .Filters.Add "PNG files", "*.png"
-        .Filters.Add "JPEG files", "*.jpg;*.jpeg"
-        .Filters.Add "TIFF files", "*.tif;*.tiff"
-        .Filters.Add "All files", "*.*"
+        .Filters.Add T("dialog.filter.images"), "*.png;*.jpg;*.jpeg;*.tif;*.tiff"
+        .Filters.Add T("dialog.filter.png"), "*.png"
+        .Filters.Add T("dialog.filter.jpeg"), "*.jpg;*.jpeg"
+        .Filters.Add T("dialog.filter.tiff"), "*.tif;*.tiff"
+        .Filters.Add T("dialog.filter.all"), "*.*"
         If .Show = -1 Then txtImagePath.Text = .SelectedItems(1)
     End With
 
@@ -109,7 +109,7 @@ End Sub
 
 Private Sub cmdClearFiles_Click()
     EnsureWorkingFolder
-    If MsgBox("Clear all files from the package contents folder?", vbQuestion + vbYesNo) = vbYes Then
+    If MsgBox(T("msg.clearFolder"), vbQuestion + vbYesNo) = vbYes Then
         ClearWorkingFolder
         OpenWorkingFolder
     End If
@@ -124,19 +124,19 @@ Private Sub cmdInsert_Click()
     If Not attachToSelectedImage And Not manageExistingOle Then
         imagePath = Trim$(txtImagePath.Text)
         If Len(imagePath) = 0 Then
-            MsgBox "Please choose an image.", vbExclamation
+            MsgBox T("msg.chooseImage"), vbExclamation
             Exit Sub
         End If
 
         If Not IsDialogSupportedImage(imagePath) Then
-            MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
+            MsgBox T("msg.chooseSupportedImage"), vbExclamation
             Exit Sub
         End If
     End If
 
     If Not manageExistingOle Then
         If Not WorkingFolderHasAnyFiles Then
-            MsgBox "Please put at least one support file or folder into the package contents folder.", vbExclamation
+            MsgBox T("msg.packageFolderEmpty"), vbExclamation
             OpenWorkingFolder
             Exit Sub
         End If
@@ -148,7 +148,7 @@ Private Sub cmdInsert_Click()
         ElseIf Not targetFloatingOle Is Nothing Then
             ManageWorkingFolderInFloatingOle targetFloatingOle, workingFolderPath, existingDisplayImagePath
         Else
-            MsgBox "The selected OLE object is no longer available.", vbExclamation
+            MsgBox T("msg.selectedOleGone"), vbExclamation
             Exit Sub
         End If
     ElseIf attachToSelectedImage Then
@@ -157,7 +157,7 @@ Private Sub cmdInsert_Click()
         ElseIf Not targetFloatingImage Is Nothing Then
             AttachWorkingFolderToFloatingImage targetFloatingImage, workingFolderPath
         Else
-            MsgBox "The selected image is no longer available.", vbExclamation
+            MsgBox T("msg.selectedImageGone"), vbExclamation
             Exit Sub
         End If
     Else
@@ -179,15 +179,15 @@ Private Sub ConfigureSystemFileManagerControls()
     Me.Width = DIALOG_WIDTH
     Me.Height = DIALOG_HEIGHT
 
-    Caption = "Insert Image + Package Folder"
-    lblIntro.Caption = "1. Choose the display image. 2. Click Open Folder... and edit the package contents in Windows Explorer. 3. Return here and click Insert."
+    Caption = T("dialog.insert.caption")
+    lblIntro.Caption = T("dialog.insert.intro")
     lblIntro.Left = 18
     lblIntro.Top = 15
     lblIntro.Width = 444
     lblIntro.Height = 42
     lblIntro.WordWrap = True
 
-    lblImage.Caption = "Display image"
+    lblImage.Caption = T("dialog.displayImage")
     lblImage.Left = 18
     lblImage.Top = 66
     lblImage.Width = 180
@@ -199,14 +199,14 @@ Private Sub ConfigureSystemFileManagerControls()
     txtImagePath.Height = 18
     txtImagePath.Enabled = True
 
-    cmdBrowseImage.Caption = "Choose image..."
+    cmdBrowseImage.Caption = T("dialog.chooseImage")
     cmdBrowseImage.Left = 372
     cmdBrowseImage.Top = 83
     cmdBrowseImage.Width = 90
     cmdBrowseImage.Height = 21
     cmdBrowseImage.Enabled = True
 
-    lblSupportFiles.Caption = "Package folder"
+    lblSupportFiles.Caption = T("dialog.packageFolder")
     lblSupportFiles.Left = 18
     lblSupportFiles.Top = 122
     lblSupportFiles.Width = 180
@@ -218,7 +218,7 @@ Private Sub ConfigureSystemFileManagerControls()
     lstSupportFiles.Width = 444
     lstSupportFiles.Height = 18
 
-    cmdAddFiles.Caption = "Open Folder..."
+    cmdAddFiles.Caption = T("dialog.openFolder")
     cmdAddFiles.Visible = True
     cmdAddFiles.Left = 18
     cmdAddFiles.Top = 144
@@ -228,7 +228,7 @@ Private Sub ConfigureSystemFileManagerControls()
     cmdAddFolder.Visible = False
     cmdRemoveSelected.Visible = False
 
-    cmdClearFiles.Caption = "Clear Folder"
+    cmdClearFiles.Caption = T("dialog.clearFolder")
     cmdClearFiles.Visible = True
     cmdClearFiles.Left = 138
     cmdClearFiles.Top = 144
@@ -244,7 +244,7 @@ Private Sub ConfigureSystemFileManagerControls()
     lblSummary.BackColor = RGB(248, 248, 248)
     lblSummary.BorderStyle = 1
 
-    cmdInsert.Caption = "Insert"
+    cmdInsert.Caption = T("dialog.insertButton")
     cmdInsert.Left = 324
     cmdInsert.Top = 258
     cmdInsert.Width = 66
@@ -259,23 +259,23 @@ Private Sub ConfigureSystemFileManagerControls()
 End Sub
 
 Private Sub ConfigureForSelectedImageMode()
-    Caption = "Attach Package to Selected Image"
-    lblIntro.Caption = "Click Open Folder..., add files/folders in Windows Explorer, then return here and click Insert. The selected image keeps its size and position."
-    lblImage.Caption = "Selected image in current document"
-    txtImagePath.Text = "Selected image in current document"
+    Caption = T("dialog.attach.caption")
+    lblIntro.Caption = T("dialog.attach.intro")
+    lblImage.Caption = T("dialog.selectedImage")
+    txtImagePath.Text = T("dialog.selectedImage")
     txtImagePath.Enabled = False
     cmdBrowseImage.Enabled = False
     UpdateDialogState
 End Sub
 
 Private Sub ConfigureForSelectedOleMode()
-    Caption = "Manage Selected OLE Package"
-    lblIntro.Caption = "Click Open Folder..., edit the unpacked package in Windows Explorer, then return here and click Rebuild."
-    lblImage.Caption = "Selected OLE object in current document"
-    txtImagePath.Text = "Selected OLE object in current document"
+    Caption = T("dialog.manage.caption")
+    lblIntro.Caption = T("dialog.manage.intro")
+    lblImage.Caption = T("dialog.selectedOle")
+    txtImagePath.Text = T("dialog.selectedOle")
     txtImagePath.Enabled = False
     cmdBrowseImage.Enabled = False
-    cmdInsert.Caption = "Rebuild"
+    cmdInsert.Caption = T("dialog.rebuildButton")
     UpdateDialogState
 End Sub
 
@@ -310,7 +310,7 @@ Private Function BuildDialogWorkingFolderPath(ByVal fso As Object, ByVal baseNam
     Dim candidatePath As String
     Dim index As Long
 
-    rootPath = fso.BuildPath(GetDialogTempFolderPath(fso), "OleRawDataInserter_Work_" & SanitizeDialogFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss"))
+    rootPath = fso.BuildPath(GetDialogTempFolderPath(fso), "OLEPackager_Work_" & SanitizeDialogFileName(baseName) & "_" & Format$(Now, "yyyymmdd_hhnnss"))
     candidatePath = rootPath
     index = 2
     Do While fso.FolderExists(candidatePath)
@@ -441,18 +441,18 @@ Private Sub UpdateDialogState()
     If Len(workingFolderPath) > 0 Then
         folderText = workingFolderPath
     Else
-        folderText = "The package folder will be created when this window opens."
+        folderText = T("dialog.folderPending")
     End If
 
     If manageExistingOle Then
-        actionText = "After editing in Explorer, return here and click Rebuild."
+        actionText = T("dialog.afterRebuild")
     ElseIf attachToSelectedImage Then
-        actionText = "After editing in Explorer, return here and click Insert."
+        actionText = T("dialog.afterInsert")
     Else
-        actionText = "After choosing an image and editing in Explorer, return here and click Insert."
+        actionText = T("dialog.afterChooseInsert")
     End If
 
-    lblSummary.Caption = "Package folder:" & vbCrLf & folderText & vbCrLf & actionText
+    lblSummary.Caption = TF("dialog.summary", folderText, actionText)
 End Sub
 
 Private Function IsDialogSupportedImage(ByVal imagePath As String) As Boolean

@@ -97,11 +97,11 @@ Public Sub AttachSupportFilesToSelectedImageAsOle()
         Exit Sub
     End If
 
-    MsgBox "Please select an existing picture or Figure Package OLE object in the Word document first.", vbExclamation
+    MsgBox T("msg.selectExisting"), vbExclamation
 End Sub
 
 Public Sub ShowUsageHelp()
-    UsageHelpDialog.ShowUsageText BuildUsageHelpText()
+    UsageHelpDialog.ShowUsageText T("usage.text")
 End Sub
 
 Public Sub InsertPlotImageAsOle()
@@ -121,13 +121,13 @@ Public Sub InsertPlotFolder(ByVal folderPath As String)
     folderPath = NormalizeFolderPath(folderPath)
 
     If Not fso.FolderExists(folderPath) Then
-        MsgBox "Folder does not exist: " & folderPath, vbCritical
+        MsgBox TF("msg.folderMissing", folderPath), vbCritical
         Exit Sub
     End If
 
     plotPath = fso.BuildPath(folderPath, "plot.png")
     If Not fso.FileExists(plotPath) Then
-        MsgBox "plot.png is not found: " & folderPath, vbCritical
+        MsgBox TF("msg.plotMissingInFolder", folderPath), vbCritical
         Exit Sub
     End If
 
@@ -142,12 +142,12 @@ Public Sub InsertPlotImageFile(ByVal plotPath As String)
     plotPath = Trim$(plotPath)
 
     If Not fso.FileExists(plotPath) Then
-        MsgBox "plot.png does not exist: " & plotPath, vbCritical
+        MsgBox TF("msg.plotFileMissing", plotPath), vbCritical
         Exit Sub
     End If
 
     If LCase$(fso.GetFileName(plotPath)) <> "plot.png" Then
-        MsgBox "Please choose plot.png.", vbExclamation
+        MsgBox T("msg.choosePlot"), vbExclamation
         Exit Sub
     End If
 
@@ -164,12 +164,12 @@ Public Sub InsertImageAndRawDataAsOle(ByVal imagePath As String, ByVal rawDataPa
     rawDataPath = Trim$(rawDataPath)
 
     If Not fso.FileExists(imagePath) Then
-        MsgBox "Image file does not exist: " & imagePath, vbCritical
+        MsgBox TF("msg.imageMissing", imagePath), vbCritical
         Exit Sub
     End If
 
     If Not fso.FileExists(rawDataPath) And Not fso.FolderExists(rawDataPath) Then
-        MsgBox "Raw data path does not exist: " & rawDataPath, vbCritical
+        MsgBox TF("msg.rawDataMissing", rawDataPath), vbCritical
         Exit Sub
     End If
 
@@ -189,7 +189,7 @@ Public Sub AttachSupportFilesToInlineImage(ByVal targetInlineShape As Object, By
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetInlineShape Is Nothing Then
-        MsgBox "The selected image is no longer available.", vbExclamation
+        MsgBox T("msg.selectedImageGone"), vbExclamation
         Exit Sub
     End If
 
@@ -219,7 +219,7 @@ Public Sub AttachWorkingFolderToInlineImage(ByVal targetInlineShape As Object, B
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetInlineShape Is Nothing Then
-        MsgBox "The selected image is no longer available.", vbExclamation
+        MsgBox T("msg.selectedImageGone"), vbExclamation
         Exit Sub
     End If
 
@@ -257,12 +257,12 @@ Public Sub AttachSupportFilesToFloatingImage(ByVal targetShape As Object, ByVal 
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetShape Is Nothing Then
-        MsgBox "The selected image is no longer available.", vbExclamation
+        MsgBox T("msg.selectedImageGone"), vbExclamation
         Exit Sub
     End If
 
     If Not IsFloatingPictureShape(targetShape) Then
-        MsgBox "Please select a picture, not another kind of floating object.", vbExclamation
+        MsgBox T("msg.selectPictureOnly"), vbExclamation
         Exit Sub
     End If
 
@@ -339,12 +339,12 @@ Public Sub AttachWorkingFolderToFloatingImage(ByVal targetShape As Object, ByVal
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetShape Is Nothing Then
-        MsgBox "The selected image is no longer available.", vbExclamation
+        MsgBox T("msg.selectedImageGone"), vbExclamation
         Exit Sub
     End If
 
     If Not IsFloatingPictureShape(targetShape) Then
-        MsgBox "Please select a picture, not another kind of floating object.", vbExclamation
+        MsgBox T("msg.selectPictureOnly"), vbExclamation
         Exit Sub
     End If
 
@@ -595,7 +595,7 @@ Public Function GetZipEntryNames(ByVal zipPath As String) As Collection
         Err.Raise vbObjectError + 541, "GetZipEntryNames", "Zip file does not exist: " & zipPath
     End If
 
-    listPath = BuildTempFilePath(fso, "OleRawDataInserterZipList", ".txt")
+    listPath = BuildTempFilePath(fso, "OLEPackagerZipList", ".txt")
     RunZipTool "list " & QuoteForCommandLine(zipPath) & " " & QuoteForCommandLine(listPath), "GetZipEntryNames"
 
     If fso.FileExists(listPath) Then
@@ -630,7 +630,7 @@ Public Sub ManageFilesInInlineOle(ByVal targetInlineShape As Object, ByVal exist
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetInlineShape Is Nothing Then
-        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        MsgBox T("msg.selectedOleGone"), vbExclamation
         Exit Sub
     End If
 
@@ -661,7 +661,7 @@ Public Sub ManageWorkingFolderInInlineOle(ByVal targetInlineShape As Object, ByV
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetInlineShape Is Nothing Then
-        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        MsgBox T("msg.selectedOleGone"), vbExclamation
         Exit Sub
     End If
 
@@ -711,7 +711,7 @@ Public Sub ManageFilesInFloatingOle(ByVal targetShape As Object, ByVal existingZ
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetShape Is Nothing Then
-        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        MsgBox T("msg.selectedOleGone"), vbExclamation
         Exit Sub
     End If
 
@@ -781,7 +781,7 @@ Public Sub ManageWorkingFolderInFloatingOle(ByVal targetShape As Object, ByVal w
 
     Set fso = CreateObject("Scripting.FileSystemObject")
     If targetShape Is Nothing Then
-        MsgBox "The selected OLE object is no longer available.", vbExclamation
+        MsgBox T("msg.selectedOleGone"), vbExclamation
         Exit Sub
     End If
 
@@ -842,22 +842,22 @@ Public Sub InsertImageAndSupportFilesAsOle(ByVal imagePath As String, ByVal supp
     imagePath = Trim$(imagePath)
 
     If Not fso.FileExists(imagePath) Then
-        MsgBox "Image file does not exist: " & imagePath, vbCritical
+        MsgBox TF("msg.imageMissing", imagePath), vbCritical
         Exit Sub
     End If
 
     If Not IsSupportedDisplayImage(fso.GetExtensionName(imagePath)) Then
-        MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
+        MsgBox T("msg.chooseSupportedImage"), vbExclamation
         Exit Sub
     End If
 
     If supportFiles Is Nothing Then
-        MsgBox "No support files or folders were selected.", vbExclamation
+        MsgBox T("msg.noSupportFiles"), vbExclamation
         Exit Sub
     End If
 
     If supportFiles.Count = 0 Then
-        MsgBox "No support files or folders were selected.", vbExclamation
+        MsgBox T("msg.noSupportFiles"), vbExclamation
         Exit Sub
     End If
 
@@ -875,12 +875,12 @@ Public Sub InsertImageAndWorkingFolderAsOle(ByVal imagePath As String, ByVal wor
     imagePath = Trim$(imagePath)
 
     If Not fso.FileExists(imagePath) Then
-        MsgBox "Image file does not exist: " & imagePath, vbCritical
+        MsgBox TF("msg.imageMissing", imagePath), vbCritical
         Exit Sub
     End If
 
     If Not IsSupportedDisplayImage(fso.GetExtensionName(imagePath)) Then
-        MsgBox "Please choose a PNG, JPG, JPEG, TIF, or TIFF image.", vbExclamation
+        MsgBox T("msg.chooseSupportedImage"), vbExclamation
         Exit Sub
     End If
 
@@ -930,7 +930,7 @@ Private Function AddImageZipOleInline(ByVal imagePath As String, ByVal zipPath A
         Err.Raise vbObjectError + 530, "AddImageZipOleInline", "Support zip file does not exist: " & zipPath
     End If
 
-    iconPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserterTransparent.ico")
+    iconPath = fso.BuildPath(GetTempFolderPath(fso), "OLEPackagerTransparent.ico")
     CreateTransparentIcon iconPath
 
     Set oleObject = Selection.InlineShapes.AddOLEObject( _
@@ -953,7 +953,7 @@ End Function
 
 Private Function PickPlotFolder() As String
     With Application.FileDialog(msoFileDialogFolderPicker)
-        .Title = "Select the folder containing plot.png"
+        .Title = T("picker.plotFolder")
         .AllowMultiSelect = False
         If .Show <> -1 Then
             PickPlotFolder = vbNullString
@@ -965,7 +965,7 @@ End Function
 
 Private Function PickPlotImage() As String
     With Application.FileDialog(msoFileDialogFilePicker)
-        .Title = "Choose plot.png"
+        .Title = T("picker.plotImage")
         .AllowMultiSelect = False
         .Filters.Clear
         .Filters.Add "plot.png", "plot.png"
@@ -1136,34 +1136,7 @@ Private Function HasOlePackageOpenXml(ByVal openXml As String) As Boolean
 End Function
 
 Private Function BuildUsageHelpText() As String
-    Dim escaped As String
-
-    escaped = _
-        "Figure Package \u4F7F\u7528\u8BF4\u660E\n\n" & _
-        "\u65B9\u5F0F\u4E00\uFF1APlot \u6587\u4EF6\u5939\n" & _
-        "1. \u5728\u4E00\u4E2A\u6587\u4EF6\u5939\u4E2D\u51C6\u5907 plot.py\u3001\u539F\u59CB\u6570\u636E\uFF0C\u4EE5\u53CA\u5176\u4ED6\u8F85\u52A9\u811A\u672C\u6216\u56FE\u7247\u3002\n" & _
-        "2. \u8FD0\u884C plot.py \u751F\u6210\u6700\u7EC8\u56FE\u7247 plot.png\u3002plot.png \u5FC5\u987B\u548C plot.py \u653E\u5728\u540C\u4E00\u4E2A\u6587\u4EF6\u5939\u91CC\u3002\n" & _
-        "3. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Figure Package\uFF0C\u9009\u62E9\u8FD9\u4E2A\u6587\u4EF6\u5939\u3002\n" & _
-        "4. \u63D2\u4EF6\u4F1A\u628A\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u539F\u59CB\u6570\u636E\u548C\u811A\u672C\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F plot.png\u3002\n" & _
-        "5. \u6253\u5305\u65F6\u4E0D\u4F1A\u5305\u542B\u9876\u5C42 plot.png\u3001plot.svg\u3001plot.pdf\uFF1B\u4F1A\u5305\u542B plot.py\u3001\u5176\u4ED6\u6570\u636E\u6587\u4EF6\u3001\u811A\u672C\u3001\u56FE\u7247\u548C\u5B50\u6587\u4EF6\u5939\u3002\n\n" & _
-        "\u65B9\u5F0F\u4E8C\uFF1A\u56FE\u7247 + \u5305\u5185\u5BB9\u6587\u4EF6\u5939\n" & _
-        "1. \u5728 Word \u4E2D\u70B9\u51FB Figure Package > Insert Image + Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
-        "2. \u5728\u7A97\u53E3\u4E2D\u70B9\u51FB Choose image...\uFF0C\u9009\u62E9\u8981\u663E\u793A\u7684\u56FE\u7247\uFF0C\u652F\u6301 png\u3001jpg\u3001jpeg\u3001tif\u3001tiff\u3002\n" & _
-        "3. \u63D2\u4EF6\u4F1A\u521B\u5EFA\u4E00\u4E2A\u4E34\u65F6\u5305\u5185\u5BB9\u6587\u4EF6\u5939\uFF0C\u5E76\u5728\u7A97\u53E3\u4E2D\u663E\u793A\u5B83\u7684\u4F4D\u7F6E\u3002\n" & _
-        "4. \u70B9\u51FB Open Folder...\uFF0C\u5728 Explorer \u4E2D\u628A\u9700\u8981\u5D4C\u5165\u7684\u6587\u4EF6\u548C\u6587\u4EF6\u5939\u590D\u5236\u3001\u62D6\u653E\u3001\u5220\u9664\u6216\u91CD\u547D\u540D\uFF1B\u8BE5\u6587\u4EF6\u5939\u4E2D\u7684\u5185\u5BB9\u5C31\u662F\u6700\u7EC8 zip \u7684\u5185\u5BB9\u3002\n" & _
-        "5. \u786E\u8BA4\u540E\u56DE\u5230 Word \u7A97\u53E3\u70B9\u51FB Insert\u3002\u63D2\u4EF6\u4F1A\u628A\u5305\u5185\u5BB9\u6587\u4EF6\u5939\u91CC\u7684\u5185\u5BB9\u6253\u5305\u6210 zip\uFF0C\u5E76\u4F5C\u4E3A OLE \u5BF9\u8C61\u5D4C\u5165\u5F53\u524D\u6587\u6863\uFF1BWord \u4E2D\u663E\u793A\u7684\u662F\u6240\u9009\u56FE\u7247\u3002\n" & _
-        "6. \u8BE5\u6587\u4EF6\u5939\u672C\u8EAB\u4E0D\u4F1A\u8FDB\u5165 zip\uFF1B\u5B83\u7684\u9876\u5C42\u5185\u5BB9\u4F1A\u6210\u4E3A zip \u6839\u76EE\u5F55\uFF0C\u5B50\u6587\u4EF6\u5939\u4F1A\u4FDD\u7559\u76F8\u5BF9\u8DEF\u5F84\u3002\n" & _
-        "\n" & _
-        "\u65B9\u5F0F\u4E09\uFF1A\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u7684\u9644\u4EF6\n" & _
-        "1. \u5148\u5728 Word \u6587\u6863\u4E2D\u9009\u4E2D\u4E00\u5F20\u5DF2\u63D2\u5165\u7684\u56FE\u7247\uFF0C\u6216\u9009\u4E2D\u4E00\u4E2A\u5DF2\u6709\u7684 Figure Package OLE \u5BF9\u8C61\u3002\n" & _
-        "2. \u70B9\u51FB Figure Package > Manage Image/OLE Files\uFF0C\u6253\u5F00\u786E\u8BA4\u7A97\u53E3\u3002\n" & _
-        "3. \u5982\u679C\u9009\u4E2D\u7684\u662F\u666E\u901A\u56FE\u7247\uFF0C\u63D2\u4EF6\u4F1A\u521B\u5EFA\u7A7A\u7684\u5305\u5185\u5BB9\u6587\u4EF6\u5939\uFF1B\u70B9\u51FB Open Folder...\uFF0C\u628A\u652F\u6301\u6587\u4EF6\u548C\u6587\u4EF6\u5939\u653E\u8FDB\u53BB\u540E\uFF0C\u56DE\u5230 Word \u7A97\u53E3\u70B9\u51FB Insert\uFF1B\u63D2\u4EF6\u4F1A\u628A\u539F\u56FE\u7247\u66FF\u6362\u6210 OLE \u5BF9\u8C61\uFF0C\u5E76\u4FDD\u6301\u539F\u6765\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002\n" & _
-        "4. \u5982\u679C\u9009\u4E2D\u7684\u662F\u5DF2\u6709 OLE \u5BF9\u8C61\uFF0C\u63D2\u4EF6\u4F1A\u628A\u73B0\u6709 zip \u89E3\u538B\u5230\u5305\u5185\u5BB9\u6587\u4EF6\u5939\uFF1B\u70B9\u51FB Open Folder...\uFF0C\u5728 Explorer \u4E2D\u76F4\u63A5\u65B0\u589E\u3001\u5220\u9664\u3001\u91CD\u547D\u540D\u6216\u79FB\u52A8\u6587\u4EF6\u548C\u6587\u4EF6\u5939\u3002\n" & _
-        "5. \u786E\u8BA4\u540E\u56DE\u5230 Word \u7A97\u53E3\u70B9\u51FB Rebuild\uFF0C\u63D2\u4EF6\u4F1A\u6309\u8BE5\u6587\u4EF6\u5939\u7684\u5F53\u524D\u5185\u5BB9\u91CD\u65B0\u751F\u6210 zip OLE \u5BF9\u8C61\uFF0C\u663E\u793A\u5916\u89C2\u4FDD\u6301\u4E0D\u53D8\u3002\n" & _
-        "\n" & _
-        "\u56FE\u7247\u5C3A\u5BF8\uFF1A\u59CB\u7EC8\u4FDD\u6301\u9AD8\u5BBD\u6BD4\uFF1B\u65B0\u63D2\u5165\u56FE\u7247\u5C0F\u4E8E\u7248\u5FC3\u65F6\u4FDD\u7559\u539F\u59CB\u5370\u5237\u5C3A\u5BF8\uFF0C\u5927\u4E8E\u7248\u5FC3\u65F6\u7B49\u6BD4\u7F29\u5C0F\u5230\u80FD\u653E\u8FDB\u7248\u5FC3\uFF1B\u7BA1\u7406\u5DF2\u6709\u56FE\u7247\u6216 OLE \u56FE\u5305\u65F6\u4FDD\u6301\u539F\u5BF9\u8C61\u7684\u5927\u5C0F\u548C\u4F4D\u7F6E\u3002"
-
-    BuildUsageHelpText = DecodeEscapedText(escaped)
+    BuildUsageHelpText = T("usage.text")
 End Function
 
 Private Function DecodeEscapedText(ByVal escaped As String) As String
@@ -1333,7 +1306,7 @@ Private Function ExtractDisplayImageFromRangeViaHtml(ByVal sourceRange As Range,
     On Error GoTo Failed
 
     Set fso = CreateObject("Scripting.FileSystemObject")
-    tempFolderPath = BuildUniqueTempFolderPath(fso, "OleRawDataInserterImageExport")
+    tempFolderPath = BuildUniqueTempFolderPath(fso, "OLEPackagerImageExport")
     fso.CreateFolder tempFolderPath
     htmlPath = fso.BuildPath(tempFolderPath, "image.html")
 
@@ -2117,7 +2090,7 @@ Private Function BuildTempStagingFolderPath(ByVal fso As Object, ByVal baseName 
     Dim stamp As String
 
     stamp = Format$(Now, "yyyymmdd_hhnnss")
-    BuildTempStagingFolderPath = fso.BuildPath(GetTempFolderPath(fso), "OleRawDataInserter_" & baseName & "_" & stamp)
+    BuildTempStagingFolderPath = fso.BuildPath(GetTempFolderPath(fso), "OLEPackager_" & baseName & "_" & stamp)
 End Function
 
 Private Function BuildTempFilePath(ByVal fso As Object, ByVal prefix As String, ByVal extensionName As String) As String
@@ -2385,7 +2358,7 @@ Private Sub RunZipTool(ByVal arguments As String, ByVal errorSource As String)
     Set wsh = CreateObject("WScript.Shell")
     exitCode = wsh.Run(command, 0, True)
     If exitCode <> 0 Then
-        Err.Raise vbObjectError + 562, errorSource, "FigurePackageZipTool failed with exit code " & exitCode & ": " & command
+        Err.Raise vbObjectError + 562, errorSource, "OLEPackagerZipTool failed with exit code " & exitCode & ": " & command
     End If
 End Sub
 
@@ -2401,14 +2374,14 @@ Private Function GetZipToolPath(ByVal fso As Object) As String
         End If
     End If
 
-    candidatePath = fso.BuildPath(Application.StartupPath, "FigurePackageZipTool.exe")
+    candidatePath = fso.BuildPath(Application.StartupPath, "OLEPackagerZipTool.exe")
     If fso.FileExists(candidatePath) Then
         GetZipToolPath = candidatePath
         Exit Function
     End If
 
     On Error Resume Next
-    candidatePath = fso.BuildPath(ThisDocument.Path, "FigurePackageZipTool.exe")
+    candidatePath = fso.BuildPath(ThisDocument.Path, "OLEPackagerZipTool.exe")
     If Err.Number = 0 Then
         If fso.FileExists(candidatePath) Then
             GetZipToolPath = candidatePath
@@ -2419,7 +2392,7 @@ Private Function GetZipToolPath(ByVal fso As Object) As String
     Err.Clear
     On Error GoTo 0
 
-    Err.Raise vbObjectError + 563, "GetZipToolPath", "Could not find FigurePackageZipTool.exe. Reinstall the add-in."
+    Err.Raise vbObjectError + 563, "GetZipToolPath", "Could not find OLEPackagerZipTool.exe. Reinstall the add-in."
 End Function
 
 Private Function ZipToolBoolean(ByVal value As Boolean) As String
@@ -2445,8 +2418,8 @@ Private Sub CreateZipWithPowerShell(ByVal sourcePath As String, ByVal zipPath As
     Set fso = CreateObject("Scripting.FileSystemObject")
     If fso.FileExists(zipPath) Then fso.DeleteFile zipPath, True
 
-    scriptPath = BuildTempFilePath(fso, "OleRawDataInserterZip", ".ps1")
-    logPath = BuildTempFilePath(fso, "OleRawDataInserterZip", ".log")
+    scriptPath = BuildTempFilePath(fso, "OLEPackagerZip", ".ps1")
+    logPath = BuildTempFilePath(fso, "OLEPackagerZip", ".log")
     WriteZipScript scriptPath, sourcePath, zipPath, excludeGeneratedPlotFiles
 
     stage = "run zip script"

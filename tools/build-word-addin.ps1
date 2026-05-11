@@ -19,15 +19,17 @@ $ErrorActionPreference = 'Stop'
 
 $srcDir = Join-Path $ProjectRoot 'src'
 $distDir = Join-Path $ProjectRoot 'dist'
-$addinPath = Join-Path $distDir 'OleRawDataInserter.dotm'
-$zipToolPath = Join-Path $distDir 'FigurePackageZipTool.exe'
-$tempBuildDir = Join-Path $env:LOCALAPPDATA 'Temp\OleRawDataInserterBuild'
+$addinPath = Join-Path $distDir 'OLEPackager.dotm'
+$zipToolPath = Join-Path $distDir 'OLEPackagerZipTool.exe'
+$tempBuildDir = Join-Path $env:LOCALAPPDATA 'Temp\OLEPackagerBuild'
 $plainAddinPath = Join-Path $tempBuildDir 'PlainSaveTest.dotm'
 $tempAddinPath = Join-Path $tempBuildDir 'VbaSaveTest.dotm'
 $logPath = Join-Path $distDir 'build-word-addin.log'
 $startupDir = Join-Path $env:APPDATA 'Microsoft\Word\STARTUP'
-$startupAddinPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
-$startupZipToolPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
+$startupAddinPath = Join-Path $startupDir 'OLEPackager.dotm'
+$startupZipToolPath = Join-Path $startupDir 'OLEPackagerZipTool.exe'
+$legacyStartupAddinPath = Join-Path $startupDir 'OleRawDataInserter.dotm'
+$legacyStartupZipToolPath = Join-Path $startupDir 'FigurePackageZipTool.exe'
 $securityKey = $null
 $valueName = 'AccessVBOM'
 $hadOriginalValue = $false
@@ -167,7 +169,9 @@ function Save-DotmWithWord {
         $doc = $word.Documents.Add()
 
         if ($ImportVba) {
-            $doc.VBProject.Name = 'OleRawDataInserter'
+            $doc.VBProject.Name = 'OLEPackager'
+            Write-Step 'Importing Localization.bas'
+            $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'Localization.bas')) | Out-Null
             Write-Step 'Importing RawDataOleInserter.bas'
             $doc.VBProject.VBComponents.Import((Join-Path $srcDir 'RawDataOleInserter.bas')) | Out-Null
             Write-Step 'Importing RibbonCallbacks.bas'
@@ -223,6 +227,12 @@ try {
         }
 
         Write-Step "Installing to Word STARTUP after Word is closed: $startupDir"
+        foreach ($legacyPath in @($legacyStartupAddinPath, $legacyStartupZipToolPath)) {
+            if (Test-Path -LiteralPath $legacyPath) {
+                Write-Step "Removing legacy add-in file: $legacyPath"
+                Remove-Item -LiteralPath $legacyPath -Force
+            }
+        }
         Copy-FileReplacing $addinPath $startupAddinPath
         Copy-FileReplacing $zipToolPath $startupZipToolPath
         "Installed: $startupAddinPath"

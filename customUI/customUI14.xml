@@ -2,35 +2,35 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="RibbonOnLoad">
   <ribbon>
     <tabs>
-      <tab id="tabOleRawDataInserter" label="Figure Package">
-        <group id="grpInsert" label="Insert">
+      <tab id="tabOLEPackager" getLabel="RibbonGetLabel">
+        <group id="grpInsert" getLabel="RibbonGetLabel">
           <button id="btnInsertPlotFolder"
-                  label="Insert Figure Package"
+                  getLabel="RibbonGetLabel"
                   size="large"
-                  image="InsertFigurePackageIcon"
-                  screentip="Insert plot.png with source files"
-                  supertip="Choose a folder containing plot.png. The add-in embeds the whole folder as a zip OLE object and displays plot.png."
+                  image="InsertOLEPackageIcon"
+                  getScreentip="RibbonGetScreentip"
+                  getSupertip="RibbonGetSupertip"
                   onAction="RibbonInsertPlotFolder"/>
           <button id="btnInsertImageSupportFiles"
-                  label="Insert Image + Files"
+                  getLabel="RibbonGetLabel"
                   size="large"
                   image="InsertImageFilesIcon"
-                  screentip="Insert an image with selected support files"
-                  supertip="Open a dialog where you can review the selected image and support files before embedding the files as a zip OLE object."
+                  getScreentip="RibbonGetScreentip"
+                  getSupertip="RibbonGetSupertip"
                   onAction="RibbonInsertImageSupportFiles"/>
           <button id="btnAttachSupportFilesToSelectedImage"
-                  label="Manage Image/OLE Files"
+                  getLabel="RibbonGetLabel"
                   size="large"
                   image="ManageImageOleFilesIcon"
-                  screentip="Manage files attached to an image or OLE object"
-                  supertip="Select an existing picture or Figure Package OLE object, then add or remove embedded files while preserving the display, size, and position."
+                  getScreentip="RibbonGetScreentip"
+                  getSupertip="RibbonGetSupertip"
                   onAction="RibbonAttachSupportFilesToSelectedImage"/>
           <button id="btnShowUsage"
-                  label="Usage"
+                  getLabel="RibbonGetLabel"
                   size="large"
                   image="UsageHelpIcon"
-                  screentip="Show usage instructions"
-                  supertip="Learn how to prepare plot.py, plot.png, and raw data before inserting a figure package."
+                  getScreentip="RibbonGetScreentip"
+                  getSupertip="RibbonGetSupertip"
                   onAction="RibbonShowUsage"/>
         </group>
       </tab>

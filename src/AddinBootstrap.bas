@@ -1,9 +1,9 @@
 Attribute VB_Name = "AddinBootstrap"
 Option Explicit
 
-Private Const ADDIN_NAME As String = "OleRawDataInserter"
-Private Const BUTTON_TAG As String = "OleRawDataInserter.InsertPlotFolderAsOle"
-Private Const BUTTON_CAPTION As String = "Insert Raw Data OLE"
+Private Const ADDIN_NAME As String = "OLEPackager"
+Private Const BUTTON_TAG As String = "OLEPackager.InsertPlotFolderAsOle"
+Private Const BUTTON_CAPTION As String = "Insert OLE Package"
 
 Public Sub AutoExec()
     InstallAddinButton

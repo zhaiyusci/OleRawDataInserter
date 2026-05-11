@@ -1,4 +1,4 @@
-# Figure Package Word Add-in
+# OLE Packager
 
 这是从 `缝合怪.docm` 拆出的 Word 加载项项目。它可以把图和支持材料打包为 zip，并作为 OLE 对象插入当前 Word 文档；OLE 对象在 Word 中显示为所选图片本身。
 
@@ -7,13 +7,13 @@
 给用户分发这个安装器：
 
 ```text
-OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
+OLEPackager\release\OLEPackagerSetup.exe
 ```
 
 安装步骤：
 
 1. 关闭 Microsoft Word。
-2. 双击 `FigurePackageWordAddinSetup.exe`。
+2. 双击 `OLEPackagerSetup.exe`。
 3. 重新打开 Word。
 
 安装器会为当前 Windows 用户安装 Word 加载项本体和 UTF-8 zip helper；终端用户不需要单独安装 Python、PowerShell 脚本或 7-Zip。
@@ -22,13 +22,13 @@ OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
 
 1. 新建一个图目录，把绘图脚本、原始数据和辅助文件都放进去。
 2. 用 `plot.py` 画图，并在同一个目录下输出最终图片 `plot.png`。
-3. 在 Word 的 `Figure Package` 选项卡中点击 `Insert Figure Package`。
+3. 在 Word 的 `OLE Packager` 选项卡中点击 `Insert OLE Package`。
 4. 选择刚才那个包含 `plot.py` 和 `plot.png` 的图目录。
 5. 插件会把目录中的原始数据和脚本打包成 zip，并作为 OLE 对象嵌入当前 Word 文档；文档中显示的外观就是 `plot.png`。
 
 ### 工作流二：图片 + 包内容文件夹
 
-1. 在 Word 的 `Figure Package` 选项卡中点击 `Insert Image + Files`，打开确认窗口。
+1. 在 Word 的 `OLE Packager` 选项卡中点击 `Insert Image + Files`，打开确认窗口。
 2. 在窗口中点击 `Choose image...`，选择要显示在文档中的图片，支持 `png`、`jpg`、`jpeg`、`tif`、`tiff`。
 3. 插件会创建一个临时包内容文件夹，并在窗口里提示它的位置。
 4. 点击 `Open Folder...`，在 Windows Explorer 中把需要嵌入的文件和文件夹复制、拖放、删除或重命名。
@@ -37,8 +37,8 @@ OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
 
 ### 工作流三：管理已有图片或 OLE 图包的附件
 
-1. 在 Word 文档中选中一张已经插入的图片，或选中一个已有的 Figure Package OLE 对象。
-2. 在 `Figure Package` 选项卡中点击 `Manage Image/OLE Files`，打开确认窗口。
+1. 在 Word 文档中选中一张已经插入的图片，或选中一个已有的 OLE Packager 对象。
+2. 在 `OLE Packager` 选项卡中点击 `Manage Image/OLE Files`，打开确认窗口。
 3. 如果选中的是普通图片，插件会创建一个空的包内容文件夹。
 4. 如果选中的是已有 OLE 对象，插件会先把当前 zip 解压到包内容文件夹。
 5. 点击 `Open Folder...`，在 Windows Explorer 中直接新增、删除、重命名或移动文件和文件夹。
@@ -47,19 +47,19 @@ OleRawDataInserter\release\FigurePackageWordAddinSetup.exe
 卸载方式：
 
 ```text
-Windows Settings -> Installed apps -> Figure Package Word Add-in -> Uninstall
+Windows Settings -> Installed apps -> OLE Packager -> Uninstall
 ```
 
 也可以手动删除：
 
 ```text
-%APPDATA%\Microsoft\Word\STARTUP\OleRawDataInserter.dotm
-%APPDATA%\Microsoft\Word\STARTUP\FigurePackageZipTool.exe
+%APPDATA%\Microsoft\Word\STARTUP\OLEPackager.dotm
+%APPDATA%\Microsoft\Word\STARTUP\OLEPackagerZipTool.exe
 ```
 
 ## 打包规则
 
-`Insert Figure Package` 使用包含 `plot.png` 的文件夹。
+`Insert OLE Package` 使用包含 `plot.png` 的文件夹。
 
 压缩包内容规则：
 
@@ -79,7 +79,7 @@ Windows Settings -> Installed apps -> Figure Package Word Add-in -> Uninstall
 - 子文件夹会保留相对路径。
 - zip 文件名使用标准 UTF-8 编码；现代 Windows、7-Zip、WinRAR、macOS、Linux 工具通常可以正确显示中文文件/文件夹名。
 
-`Manage Image/OLE Files` 使用文档中已经选中的图片或 Figure Package OLE 对象。
+`Manage Image/OLE Files` 使用文档中已经选中的图片或 OLE Packager 对象。
 
 压缩包内容规则：
 
@@ -105,23 +105,23 @@ OLE 外观规则：
 ## 项目结构
 
 ```text
-OleRawDataInserter/
+OLEPackager/
   LICENSE
   assets/
-    insert-figure-package-icon.png
+    insert-ole-package-icon.png
     insert-image-files-icon.png
     manage-image-ole-files-icon.png
     usage-help-icon.png
   customUI/
     customUI14.xml
   dist/
-    FigurePackageZipTool.exe
-    OleRawDataInserter.dotm
+    OLEPackagerZipTool.exe
+    OLEPackager.dotm
   installer/
     inno/
-      FigurePackageWordAddin.iss
+      OLEPackager.iss
   release/
-    FigurePackageWordAddinSetup.exe
+    OLEPackagerSetup.exe
   src/
     ImageSupportFilesDialog.frm
     ImageSupportFilesDialog.frx
@@ -135,7 +135,7 @@ OleRawDataInserter/
   tools/
     build-word-addin.ps1
     diagnose-dotm-save.ps1
-    FigurePackageZipTool.cs
+    OLEPackagerZipTool.cs
     inject-ribbon.ps1
 ```
 
@@ -144,8 +144,8 @@ OleRawDataInserter/
 本机开发时推荐使用自动构建脚本：
 
 ```powershell
-cd "C:\Users\Yu Zhai\Desktop\缝合怪2.1\OleRawDataInserter"
-& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /out:dist\FigurePackageZipTool.exe /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll tools\FigurePackageZipTool.cs
+cd "C:\Users\Yu Zhai\Desktop\缝合怪2.1\OLEPackager"
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /out:dist\OLEPackagerZipTool.exe /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll tools\OLEPackagerZipTool.cs
 powershell -ExecutionPolicy Bypass -File tools\build-word-addin.ps1 -Install -CloseWord
 ```
 
@@ -154,7 +154,7 @@ powershell -ExecutionPolicy Bypass -File tools\build-word-addin.ps1 -Install -Cl
 请看：
 
 ```text
-OleRawDataInserter\DEVELOPER_NOTES.md
+OLEPackager\DEVELOPER_NOTES.md
 ```
 
 ## Credits

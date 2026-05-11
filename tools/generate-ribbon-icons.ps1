@@ -58,7 +58,7 @@ function Draw-Panel {
     $path.Dispose()
 }
 
-function Draw-InsertFigurePackage {
+function Draw-InsertOLEPackage {
     param($Graphics)
     Draw-Panel $Graphics ([System.Drawing.Color]::FromArgb(232, 154, 54))
 
@@ -198,7 +198,7 @@ function New-RibbonIcon {
 }
 
 $created = @()
-$created += New-RibbonIcon 'insert-figure-package-icon.png' { param($g) Draw-InsertFigurePackage $g }
+$created += New-RibbonIcon 'insert-ole-package-icon.png' { param($g) Draw-InsertOLEPackage $g }
 $created += New-RibbonIcon 'insert-image-files-icon.png' { param($g) Draw-ImageFiles $g }
 $created += New-RibbonIcon 'manage-image-ole-files-icon.png' { param($g) Draw-ManageFiles $g }
 $created += New-RibbonIcon 'usage-help-icon.png' { param($g) Draw-UsageHelp $g }

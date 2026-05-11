@@ -1,6 +1,6 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} UsageHelpDialog 
-   Caption         =   "Figure Package Usage"
+   Caption         =   "OLE Packager Usage"
    ClientHeight    =   8040
    ClientLeft      =   108
    ClientTop       =   456
@@ -16,6 +16,7 @@ Attribute VB_Exposed = False
 Option Explicit
 
 Public Sub ShowUsageText(ByVal usageText As String)
+    Caption = T("usage.title")
     txtUsage.Text = usageText
     txtUsage.SelStart = 0
     Me.Show
