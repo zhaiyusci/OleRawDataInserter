@@ -1,48 +1,52 @@
 # OLE Packager
 
-这是从 `缝合怪.docm` 拆出的 Word 加载项项目。它可以把图和支持材料打包为 zip，并作为 OLE 对象插入当前 Word 文档；OLE 对象在 Word 中显示为所选图片本身。
+这是从 `缝合怪.docm` 拆出的 Office 加载项项目。它可以把图和支持材料打包为 zip，并作为 OLE 对象插入当前 Word 文档或 PowerPoint 幻灯片；OLE 对象显示为所选图片本身。
+
+当前 `codex/vsto-migration` 分支使用共享 C# Core 加两个 VSTO 宿主加载项实现三个工作流。原 VBA `.dotm`、zip helper 和旧安装器仍保留在仓库中，供迁移对照。
 
 ## 终端用户使用
 
 给用户分发这个安装器：
 
 ```text
-OLEPackager\release\OLEPackagerSetup.exe
+OLEPackager\release\OLEPackagerVstoSetup.exe
 ```
 
 安装步骤：
 
-1. 关闭 Microsoft Word。
-2. 双击 `OLEPackagerSetup.exe`。
-3. 重新打开 Word。
+1. 关闭 Microsoft Word 和 PowerPoint。
+2. 双击 `OLEPackagerVstoSetup.exe`。
+3. 重新打开 Word 或 PowerPoint。
 
-安装器会为当前 Windows 用户安装 Word 加载项本体和 UTF-8 zip helper；终端用户不需要单独安装 Python、PowerShell 脚本或 7-Zip。
+安装器默认会为当前 Windows 用户安装 Word 和 PowerPoint 两个 C# VSTO 加载项，也可以在安装类型中只选一个宿主。压缩、解压和 OLE 解析均在加载项中完成；终端用户不需要单独安装 Python、PowerShell 脚本、zip helper 或 7-Zip。
 
 ### 工作流一：plot 文件夹
 
 1. 新建一个图目录，把绘图脚本、原始数据和辅助文件都放进去。
 2. 用 `plot.py` 画图，并在同一个目录下输出最终图片 `plot.png`。
-3. 在 Word 的 `OLE Packager` 选项卡中点击 `Insert OLE Package`。
+3. 在 Word 或 PowerPoint 的 `OLE Packager` 选项卡中点击 `Insert OLE Package`。
 4. 选择刚才那个包含 `plot.py` 和 `plot.png` 的图目录。
-5. 插件会把目录中的原始数据和脚本打包成 zip，并作为 OLE 对象嵌入当前 Word 文档；文档中显示的外观就是 `plot.png`。
+5. 插件会把目录中的原始数据和脚本打包成 zip，并作为 OLE 对象嵌入当前文档或幻灯片；显示外观就是 `plot.png`。
 
 ### 工作流二：图片 + 包内容文件夹
 
-1. 在 Word 的 `OLE Packager` 选项卡中点击 `Insert Image + Files`，打开确认窗口。
+1. 在 Word 或 PowerPoint 的 `OLE Packager` 选项卡中点击 `Insert Image + Files`，打开确认窗口。
 2. 在窗口中点击 `Choose image...`，选择要显示在文档中的图片，支持 `png`、`jpg`、`jpeg`、`tif`、`tiff`。
-3. 插件会创建一个临时包内容文件夹，并在窗口里提示它的位置。
-4. 点击 `Open Folder...`，在 Windows Explorer 中把需要嵌入的文件和文件夹复制、拖放、删除或重命名。
-5. 确认包内容文件夹无误后，回到 Word 窗口点击 `Insert`。
-6. 插件会把该文件夹中的内容打包成 zip，并作为 OLE 对象嵌入当前 Word 文档；文档中显示的是第一步选择的图片。
+3. 使用窗口中的文件列表直接添加文件、添加文件夹、拖放、移除或清空包内容。
+4. 需要在 Windows Explorer 中进行更复杂的整理时，点击“在资源管理器中打开”。
+5. 确认列表中的包内路径无误后点击“插入”。
+6. 插件会把该文件夹中的内容打包成 zip，并作为 OLE 对象嵌入当前文档或幻灯片；显示的是第一步选择的图片。
 
 ### 工作流三：管理已有图片或 OLE 图包的附件
 
-1. 在 Word 文档中选中一张已经插入的图片，或选中一个已有的 OLE Packager 对象。
+1. 在 Word 文档或 PowerPoint 幻灯片中选中一张普通图片，或选中一个已有的 OLE Packager 对象。
 2. 在 `OLE Packager` 选项卡中点击 `Manage Image/OLE Files`，打开确认窗口。
 3. 如果选中的是普通图片，插件会创建一个空的包内容文件夹。
 4. 如果选中的是已有 OLE 对象，插件会先把当前 zip 解压到包内容文件夹。
-5. 点击 `Open Folder...`，在 Windows Explorer 中直接新增、删除、重命名或移动文件和文件夹。
-6. 回到 Word 窗口点击 `Insert` 或 `Rebuild`。插件会按该文件夹的当前内容重新生成 zip OLE 对象；Word 中显示出来仍然是原来的图，并保持原来的大小和位置。
+5. 在编辑器列表中直接新增、删除或拖放文件和文件夹，也可以打开 Windows Explorer 继续整理。
+6. 点击“插入”或“重建”。插件会按列表中的当前内容重新生成 zip OLE 对象；显示出来仍然是原来的图，并尽量保持原对象的布局与格式。
+
+PowerPoint 会保留尺寸、位置、层级、宽高比、名称、替代文字、Title、标签、动作和动画绑定。Word 会保留尺寸、位置、环绕、锚点、间距、宽高比、名称和替代文字。由于 Office 的 OLE 图形本身不接受旋转和翻转，插件会在这些场景把最终视觉高质量烘焙为透明图片，同时继续保留 OLE 双击打开附件包的行为。PowerPoint 组内对象和占位符当前不会被替换。
 
 卸载方式：
 
@@ -50,11 +54,13 @@ OLEPackager\release\OLEPackagerSetup.exe
 Windows Settings -> Installed apps -> OLE Packager -> Uninstall
 ```
 
-也可以手动删除：
+VSTO 版的安装目录和注册位置是：
 
 ```text
-%APPDATA%\Microsoft\Word\STARTUP\OLEPackager.dotm
-%APPDATA%\Microsoft\Word\STARTUP\OLEPackagerZipTool.exe
+%APPDATA%\OLE Packager\VSTO\Word
+%APPDATA%\OLE Packager\VSTO\PowerPoint
+HKCU\Software\Microsoft\Office\Word\Addins\OLEPackager.WordAddIn
+HKCU\Software\Microsoft\Office\PowerPoint\Addins\OLEPackager.PowerPointAddIn
 ```
 
 ## 打包规则
@@ -94,11 +100,10 @@ Windows Settings -> Installed apps -> OLE Packager -> Uninstall
 OLE 外观规则：
 
 - 嵌入对象本体是 zip。
-- Word 中显示为所选图片：plot 文件夹模式显示 `plot.png`，图片 + 支持文件模式显示用户选择的图片，管理已有图片或 OLE 图包时显示原本选中的图。
+- Word 和 PowerPoint 中显示为所选图片：plot 文件夹模式显示 `plot.png`，图片 + 支持文件模式显示用户选择的图片，管理已有图片或 OLE 图包时显示原本选中的图。
 - 始终保持显示图片的高宽比。
-- 新插入图片时，如果显示图片的印刷尺寸小于版心，保持原始印刷尺寸。
-- 新插入图片时，如果显示图片的印刷尺寸超过版心，等比缩小到能放进版心。
-- 管理已有图片或 OLE 图包时，保持原对象在文档中的大小和位置。
+- Word 新插入图片时按版心等比适配；PowerPoint 新插入图片时按幻灯片可用区域等比适配并居中。
+- 管理已有图片或 OLE 图包时，保持原对象的几何位置；旋转或翻转对象使用视觉烘焙保持最终外观。
 - 不显示 zip 文件名。
 - 使用透明 icon 避免出现默认文件图标。
 
@@ -120,8 +125,23 @@ OLEPackager/
   installer/
     inno/
       OLEPackager.iss
+      OLEPackagerVsto.iss
   release/
     OLEPackagerSetup.exe
+    OLEPackagerVstoSetup.exe
+  src-csharp/
+    OLEPackager.Core/
+      Models/
+      Services/
+      UI/
+    OLEPackager.PowerPointAddIn/
+      Ribbon/
+      Services/
+      UI/
+    OLEPackager.WordAddIn/
+      Ribbon/
+      Services/
+      UI/
   src/
     ImageSupportFilesDialog.frm
     ImageSupportFilesDialog.frx
@@ -141,15 +161,17 @@ OLEPackager/
 
 ## 开发者文档
 
-本机开发时推荐使用自动构建脚本：
+构建 C# VSTO 版本前，Visual Studio 需要安装“Microsoft 365 开发”工作负载。构建和生成 Inno 安装器：
 
 ```powershell
-cd "C:\Users\Yu Zhai\Desktop\缝合怪2.1\OLEPackager"
-& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /out:dist\OLEPackagerZipTool.exe /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll tools\OLEPackagerZipTool.cs
-powershell -ExecutionPolicy Bypass -File tools\build-word-addin.ps1 -Install -CloseWord
+cd C:\path\to\OLEPackager
+powershell -ExecutionPolicy Bypass -File tools\build-vsto-addin.ps1 -Configuration Release
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\inno\OLEPackagerVsto.iss
 ```
 
-`build-word-addin.ps1` 会先让 Word 保存一个 plain `.dotm`，再保存导入 VBA 后的 `.dotm`；Word 退出后才复制到 `dist`、注入 Ribbon，并在 `-Install` 模式下安装到 Word STARTUP 目录。这是当前验证过的稳定构建方式。
+`build-vsto-addin.ps1` 只负责编译和签署 VSTO 清单，不安装加载项。安装、升级和卸载统一由 Inno Setup 处理。旧 VBA 版本仍可通过 `tools\build-word-addin.ps1` 构建。
+
+Inno 安装器会从已签署的 VSTO 清单读取公钥，并为 Word、PowerPoint 的精确安装 URL 写入当前用户的 VSTO Inclusion List；它不会把开发证书加入系统根证书信任区。
 
 请看：
 

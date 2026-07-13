@@ -7,6 +7,11 @@ Desktop.ini
 
 # Build and diagnostic logs
 *.log
+bin/
+obj/
+src-csharp/**/bin/
+src-csharp/**/obj/
+src-csharp/**/Properties/*TemporaryKey.pfx
 
 # Local temporary/package scratch output
 installer/EndUserPackage/Payload/*

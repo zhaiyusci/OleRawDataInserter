@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11925.98
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OLEPackager.WordAddIn", "src-csharp\OLEPackager.WordAddIn\OLEPackager.WordAddIn.csproj", "{FAB243D7-3448-4D1C-82A2-26C156741AB8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OLEPackager.Core", "src-csharp\OLEPackager.Core\OLEPackager.Core.csproj", "{FDD0E00A-7AF7-4E17-A68C-54FE71E12A70}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OLEPackager.PowerPointAddIn", "src-csharp\OLEPackager.PowerPointAddIn\OLEPackager.PowerPointAddIn.csproj", "{C7241AA5-1773-4D63-A505-8219E2D12010}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FAB243D7-3448-4D1C-82A2-26C156741AB8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FAB243D7-3448-4D1C-82A2-26C156741AB8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FAB243D7-3448-4D1C-82A2-26C156741AB8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FAB243D7-3448-4D1C-82A2-26C156741AB8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FDD0E00A-7AF7-4E17-A68C-54FE71E12A70}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FDD0E00A-7AF7-4E17-A68C-54FE71E12A70}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FDD0E00A-7AF7-4E17-A68C-54FE71E12A70}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FDD0E00A-7AF7-4E17-A68C-54FE71E12A70}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7241AA5-1773-4D63-A505-8219E2D12010}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7241AA5-1773-4D63-A505-8219E2D12010}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7241AA5-1773-4D63-A505-8219E2D12010}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7241AA5-1773-4D63-A505-8219E2D12010}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

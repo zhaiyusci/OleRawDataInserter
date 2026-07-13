@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="OnLoad">
+  <ribbon>
+    <tabs>
+      <tab id="tabOLEPackager" label="OLE Packager">
+        <group id="grpInsert" label="Insert">
+          <button id="btnInsertPlotFolder"
+                  label="Insert OLE Package"
+                  size="large"
+                  getImage="InsertOLEPackageIcon"
+                  screentip="Insert OLE Package"
+                  supertip="Choose a plot folder and embed its source files as an OLE package."
+                  onAction="OnInsertPlotFolder"/>
+          <button id="btnInsertImageSupportFiles"
+                  label="Insert Image + Files"
+                  size="large"
+                  getImage="InsertImageFilesIcon"
+                  screentip="Insert Image + Files"
+                  supertip="Choose a display image and package support files into the document."
+                  onAction="OnInsertImageSupportFiles"/>
+          <button id="btnAttachSupportFilesToSelectedImage"
+                  label="Manage Image/OLE Files"
+                  size="large"
+                  getImage="ManageImageOleFilesIcon"
+                  screentip="Manage Image/OLE Files"
+                  supertip="Attach files to a selected image or rebuild an existing OLE package."
+                  onAction="OnAttachSupportFilesToSelectedImage"/>
+          <button id="btnShowUsage"
+                  label="Usage"
+                  size="large"
+                  getImage="UsageHelpIcon"
+                  screentip="Usage"
+                  supertip="Show OLE Packager usage help."
+                  onAction="OnShowUsage"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>
